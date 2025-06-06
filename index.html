@@ -1,0 +1,2349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Personal Assistant</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Custom styles for animations and general layout */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .animate-modalEnter {
+            animation: modalEnter 0.3s ease-in-out forwards;
+        }
+
+        @keyframes modalEnter {
+            from {
+                opacity: 0;
+                transform: scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        .animate-slideIn {
+            animation: slideIn 0.5s ease-out forwards;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        /* General layout adjustments for responsiveness */
+        .min-h-screen {
+            min-height: 100vh;
+        }
+        .h-1\/4 {
+            height: 25vh;
+        }
+        .h-3\/4 {
+            height: 75vh;
+        }
+        .grid-cols-7 {
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+        }
+        .gap-px {
+            gap: 1px;
+        }
+        .max-w-md {
+            max-width: 28rem; /* 448px */
+        }
+        .max-w-lg {
+            max-width: 32rem; /* 512px */
+        }
+        /* Adjusted for modals to fit better */
+        .max-w-xl {
+            max-width: 36rem; /* 576px */
+        }
+        .max-w-2xl {
+            max-width: 42rem; /* 672px */
+        }
+
+        /* Ensure images and icons scale correctly */
+        img {
+            max-width: 100%;
+            height: auto;
+        }
+        svg {
+            display: inline-block; /* Prevent extra space below icons */
+            vertical-align: middle;
+        }
+
+        /* Responsive adjustments for smaller screens */
+        @media (max-width: 767px) {
+            .md\:flex-row {
+                flex-direction: column;
+            }
+            .md\:space-y-0 {
+                margin-top: 0;
+            }
+            .md\:space-x-0 > :not([hidden]) ~ :not([hidden]) {
+                margin-left: 0;
+            }
+            .md\:p-6 {
+                padding: 1rem; /* Adjust padding for mobile */
+            }
+            .md\:text-3xl {
+                font-size: 1.875rem; /* 30px */
+            }
+            .md\:text-base {
+                font-size: 1rem; /* 16px */
+            }
+            .md\:h-24 {
+                height: 4rem; /* 64px */
+            }
+            .md\:w-24 {
+                width: 4rem; /* 64px */
+            }
+            .md\:h-28 {
+                height: 5rem; /* 80px */
+            }
+            .md\:p-2 {
+                padding: 0.5rem;
+            }
+            .md\:text-sm {
+                font-size: 0.875rem;
+            }
+            .md\:max-w-lg {
+                max-width: 100%; /* Full width on small screens */
+            }
+            .sm\:flex-row {
+                flex-direction: column;
+            }
+            .sm\:space-y-0 {
+                margin-top: 0;
+            }
+            .sm\:space-x-3 > :not([hidden]) ~ :not([hidden]) {
+                margin-left: 0;
+            }
+            .sm\:w-auto {
+                width: 100%;
+            }
+            /* Ensure modals take appropriate width on small screens */
+            .modal-content-area {
+                 max-width: 95%; /* Adjust as needed for smaller screens */
+            }
+        }
+    </style>
+</head>
+<body class="bg-slate-100 font-sans">
+    <div id="app-root" class="min-h-screen bg-slate-100 font-sans">
+        <!-- Content will be rendered here by JavaScript -->
+        <div id="loading-spinner" class="flex items-center justify-center min-h-screen">
+            <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500"></div>
+            <p class="ml-4 text-lg text-gray-700">Loading Personal Assistant...</p>
+        </div>
+    </div>
+
+    <!-- Notification Container -->
+    <div id="notification-container"></div>
+    <!-- Confirmation Modal Container -->
+    <div id="confirm-modal-container"></div>
+    <!-- Event Form Modal Container -->
+    <div id="event-form-modal-container"></div>
+    <!-- Task Form Modal Container -->
+    <div id="task-form-modal-container"></div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import {
+            getAuth,
+            createUserWithEmailAndPassword,
+            signInWithEmailAndPassword,
+            signOut,
+            onAuthStateChanged,
+            sendPasswordResetEmail,
+            updateProfile,
+            signInAnonymously,
+            signInWithCustomToken
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import {
+            getFirestore,
+            doc,
+            setDoc,
+            getDoc,
+            addDoc,
+            collection,
+            query,
+            updateDoc,
+            deleteDoc,
+            onSnapshot
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Firebase Configuration ---
+        // IMPORTANT: You MUST replace these placeholder values with your actual Firebase project's configuration.
+        // Go to your Firebase Console > Project settings (gear icon) > Your apps > Web app.
+        // Copy the 'firebaseConfig' object provided there and paste it below.
+        // Also, crucially, ensure Email/Password sign-in is enabled in:
+        // Firebase Console > Authentication > Sign-in method.
+        // The error "auth/operation-not-allowed" indicates this is not enabled.
+const firebaseConfig = {
+
+  apiKey: "AIzaSyDnN-0llXDCh1ihfZMK7VKGwnOHydIxfGY",
+
+  authDomain: "personal-assistant-831e4.firebaseapp.com",
+
+  projectId: "personal-assistant-831e4",
+
+  storageBucket: "personal-assistant-831e4.firebasestorage.app",
+
+  messagingSenderId: "843295495665",
+
+  appId: "1:843295495665:web:adbecd2864441b196de050",
+
+  measurementId: "G-Q9H76MR2Y9"
+
+};
+
+
+        // --- Initialize Firebase ---
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // --- Firebase Security Rules Note ---
+        // For Firestore to work correctly, ensure your Firebase Security Rules are set up to allow read/write access for authenticated users.
+        // For anonymous sign-in, rules like 'allow read, write: if request.auth != null && request.auth.uid == userId;' are appropriate.
+        // Example rules for 'personal-assistant-app' (replace with your actual appId if different):
+        /*
+        rules_version = '2';
+        service cloud.firestore {
+          match /databases/{database}/documents {
+            // User profile data
+            match /artifacts/{appId}/users/{userId}/profile/userData {
+              allow read, write: if request.auth != null && request.auth.uid == userId;
+            }
+            // User events
+            match /artifacts/{appId}/users/{userId}/events/{eventId} {
+              allow read, write: if request.auth != null && request.auth.uid == userId;
+            }
+            // User tasks
+            match /artifacts/{appId}/users/{userId}/tasks/{taskId} {
+              allow read, write: if request.auth != null && request.auth.uid == userId;
+            }
+          }
+        }
+        */
+
+
+        // --- App ID (for Firestore paths) ---
+        // Use your actual Firebase Project ID or a consistent string.
+        // This 'appId' should match the {appId} used in your Firestore Security Rules!
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'personal-assistant-app'; // Use __app_id if available, otherwise fallback
+
+        // --- Global State ---
+        let currentUser = null;
+        let userProfile = { name: '', email: '', phone: '', photoURL: '' };
+        let userEvents = [];
+        let userTasks = []; // New state for tasks
+        // Initial view will be 'auth' to show login screen
+        let currentView = 'auth'; // 'auth', 'landing', 'eventDetail', 'taskDetail'
+        let authScreen = 'login'; // 'login', 'register', 'forgotPassword' (only relevant if login is enabled)
+        let selectedEvent = null;
+        let selectedTask = null; // New state for selected task
+        let showProfileModal = false;
+        let notificationTimeoutId = null; // To clear previous notification timeouts
+        let currentTab = 'calendar'; // 'calendar' or 'list'
+
+        // New modal states
+        let showEventFormModal = false;
+        let isEditingEvent = false; // true if editing, false if creating
+        let showTaskFormModal = false;
+        let isEditingTask = false; // true if editing, false if creating
+
+        // Auth Screen State
+        let authInputEmail = '';
+        let authInputPassword = '';
+        let authInputConfirmPassword = '';
+        let authInputName = '';
+        let authInputPhone = '';
+        let authScreenError = '';
+        let authScreenMessage = '';
+        let showPasswordState = false;
+        let showConfirmPasswordState = false;
+
+
+        // --- Helper to get user ID ---
+        const getUserId = () => currentUser?.uid || 'no_user_logged_in';
+
+        // --- Common UI Elements ---
+        const appRoot = document.getElementById('app-root');
+        const notificationContainer = document.getElementById('notification-container');
+        const confirmModalContainer = document.getElementById('confirm-modal-container');
+        const eventFormModalContainer = document.getElementById('event-form-modal-container');
+        const taskFormModalContainer = document.getElementById('task-form-modal-container');
+
+        const commonInputClass = "w-full px-4 py-3 rounded-lg bg-slate-50 border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow";
+        const commonButtonClass = "w-full py-3 px-4 rounded-lg text-white font-semibold transition-all duration-300 ease-in-out";
+        const commonLabelClass = "block text-sm font-medium text-slate-600 mb-1";
+
+        // --- Notification Message Function ---
+        function showNotification(message, type = 'success') {
+            if (notificationTimeoutId) {
+                clearTimeout(notificationTimeoutId);
+            }
+
+            const bgColor = type === 'success' ? 'bg-green-100 border-green-500 text-green-700' : 'bg-red-100 border-red-500 text-red-700';
+            const iconSvg = type === 'success' ? `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check-circle mr-2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>` : `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-alert-triangle mr-2"><path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>`;
+
+            notificationContainer.innerHTML = `
+                <div class="fixed top-4 right-4 p-4 rounded-md shadow-lg border-l-4 z-[1000] ${bgColor} flex items-center animate-slideIn" style="animation-fill-mode: forwards;">
+                    ${iconSvg}
+                    <span class="text-sm font-medium">${message}</span>
+                    <button class="ml-4 text-inherit opacity-70 hover:opacity-100 close-notification">&times;</button>
+                </div>
+            `;
+            notificationContainer.querySelector('.close-notification').onclick = () => {
+                notificationContainer.innerHTML = '';
+                clearTimeout(notificationTimeoutId);
+            };
+
+            notificationTimeoutId = setTimeout(() => {
+                notificationContainer.innerHTML = '';
+            }, 5000);
+        }
+
+        // --- Confirm Modal Function ---
+        function showConfirmModal(title, message, onConfirmCallback, onCancelCallback, confirmText = "Confirm", cancelText = "Cancel", confirmButtonClass = "bg-blue-600 hover:bg-blue-700") {
+            confirmModalContainer.innerHTML = `
+                <div class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
+                    <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+                        <h3 class="text-xl font-semibold text-slate-800 mb-4">${title}</h3>
+                        <p class="text-slate-600 mb-6">${message}</p>
+                        <div class="flex justify-end space-x-3">
+                            <button id="confirm-modal-cancel"
+                                class="px-4 py-2 rounded-md text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors"
+                            >
+                                ${cancelText}
+                            </button>
+                            <button id="confirm-modal-confirm"
+                                class="px-4 py-2 rounded-md text-sm font-medium text-white transition-colors ${confirmButtonClass}"
+                            >
+                                ${confirmText}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            const closeModal = () => {
+                confirmModalContainer.innerHTML = '';
+            };
+
+            document.getElementById('confirm-modal-cancel').onclick = () => {
+                onCancelCallback();
+                closeModal();
+            };
+            document.getElementById('confirm-modal-confirm').onclick = () => {
+                onConfirmCallback();
+                closeModal();
+            };
+        }
+
+
+        // --- Navigation Handler ---
+        function navigateTo(view, data = null) {
+            currentView = view;
+            selectedEvent = null; // Clear previous selections
+            selectedTask = null; // Clear previous selections
+            showEventFormModal = false; // Close modals on navigation
+            showTaskFormModal = false; // Close modals on navigation
+
+            if (view === 'eventDetail') selectedEvent = data;
+            if (view === 'taskDetail') selectedTask = data;
+
+            // Handle modal specific navigation
+            if (view === 'newEvent') {
+                showEventFormModal = true;
+                isEditingEvent = false;
+                selectedEvent = data; // For pre-populating date if from calendar day click
+                currentView = 'landing'; // Keep landing page visible underneath
+            } else if (view === 'editEvent') {
+                showEventFormModal = true;
+                isEditingEvent = true;
+                selectedEvent = data;
+                currentView = 'landing'; // Keep landing page visible underneath
+            } else if (view === 'newTask') {
+                showTaskFormModal = true;
+                isEditingTask = false;
+                selectedTask = data; // For pre-populating date if from calendar day click
+                currentView = 'landing'; // Keep landing page visible underneath
+            } else if (view === 'editTask') {
+                showTaskFormModal = true;
+                isEditingTask = true;
+                selectedTask = data;
+                currentView = 'landing'; // Keep landing page visible underneath
+            }
+            renderApp(); // Re-render the main app based on new view
+        }
+
+        // --- Fetch User Profile ---
+        async function fetchUserProfile(uid) {
+            if (!uid) {
+                userProfile = {
+                    name: 'Guest User',
+                    email: 'guest@example.com',
+                    phone: 'N/A',
+                    photoURL: '',
+                };
+                return;
+            }
+            try {
+                const userDocRef = doc(db, `artifacts/${appId}/users/${uid}/profile`, 'userData');
+                const docSnap = await getDoc(userDocRef);
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    userProfile = {
+                        name: data.name || auth.currentUser?.displayName || '',
+                        email: data.email || auth.currentUser?.email || '',
+                        phone: data.phone || '',
+                        photoURL: data.photoURL || auth.currentUser?.photoURL || '',
+                    };
+                } else {
+                    userProfile = {
+                        name: auth.currentUser?.displayName || '',
+                        email: auth.currentUser?.email || '',
+                        phone: '',
+                        photoURL: auth.currentUser?.photoURL || '',
+                    };
+                    // If no profile data exists, try to create a basic one.
+                    // This is especially useful for anonymous users.
+                    await setDoc(userDocRef, userProfile);
+                }
+                renderApp(); // Re-render after profile is fetched
+            } catch (error) {
+                console.error("Error fetching user profile:", error);
+                userProfile = {
+                    name: auth.currentUser?.displayName || '',
+                    email: auth.currentUser?.email || '',
+                    phone: '',
+                    photoURL: '',
+                };
+                showNotification(`Error fetching profile: ${error.message}`, 'error');
+                renderApp();
+            }
+        }
+
+        // --- Update User Profile ---
+        async function handleUpdateProfile(updatedProfileData) {
+            if (!currentUser) { // This case should ideally not be hit with anonymous auth, but kept as a safeguard
+                userProfile = updatedProfileData;
+                showProfileModal = false;
+                showNotification('Profile updated locally (no database sync in unauthenticated mode)!', 'success');
+                renderApp();
+                return;
+            }
+
+            try {
+                // Update Firebase Auth profile
+                await updateProfile(auth.currentUser, {
+                    displayName: updatedProfileData.name,
+                    photoURL: updatedProfileData.photoURL,
+                });
+
+                const userDocRef = doc(db, `artifacts/${appId}/users/${currentUser.uid}/profile`, 'userData');
+                await setDoc(userDocRef, {
+                    name: updatedProfileData.name,
+                    email: updatedProfileData.email,
+                    phone: updatedProfileData.phone,
+                    photoURL: updatedProfileData.photoURL,
+                }, { merge: true });
+
+                userProfile = updatedProfileData; // Update global state
+                showProfileModal = false;
+                showNotification('Profile updated successfully!', 'success');
+                renderApp(); // Re-render to reflect changes
+            } catch (error) {
+                console.error("Error updating profile:", error);
+                showNotification(`Error updating profile: ${error.message}`, 'error');
+            }
+        }
+
+        // --- Event Listener for fetching events ---
+        function setupEventsListener() {
+            if (currentUser && currentUser.uid) { // Ensure currentUser and UID are valid
+                const eventsColRef = collection(db, `artifacts/${appId}/users/${currentUser.uid}/events`);
+                const q = query(eventsColRef);
+
+                onSnapshot(q, (querySnapshot) => {
+                    const fetchedEvents = [];
+                    querySnapshot.forEach((doc) => {
+                        fetchedEvents.push({ id: doc.id, ...doc.data() });
+                    });
+                    fetchedEvents.sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
+                    userEvents = fetchedEvents;
+                    renderApp(); // Re-render when events change
+                }, (error) => {
+                    console.error("Error fetching events:", error);
+                    showNotification(`Error fetching events: ${error.message}. Check Firebase rules for user ID: ${currentUser.uid}`, 'error');
+                });
+            } else {
+                userEvents = []; // Clear events if no valid user
+                renderApp();
+            }
+        }
+
+        // --- Event Listener for fetching tasks ---
+        function setupTasksListener() {
+            if (currentUser && currentUser.uid) { // Ensure currentUser and UID are valid
+                const tasksColRef = collection(db, `artifacts/${appId}/users/${currentUser.uid}/tasks`);
+                const q = query(tasksColRef);
+
+                onSnapshot(q, (querySnapshot) => {
+                    const fetchedTasks = [];
+                    querySnapshot.forEach((doc) => {
+                        fetchedTasks.push({ id: doc.id, ...doc.data() });
+                    });
+                    fetchedTasks.sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
+                    userTasks = fetchedTasks;
+                    renderApp(); // Re-render when tasks change
+                }, (error) => {
+                    console.error("Error fetching tasks:", error);
+                    showNotification(`Error fetching tasks: ${error.message}. Check Firebase rules for user ID: ${currentUser.uid}`, 'error');
+                });
+            } else {
+                userTasks = []; // Clear tasks if no valid user
+                renderApp();
+            }
+        }
+
+        // --- Auth State Listener ---
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                // User is signed in (either real user or anonymous)
+                currentUser = user;
+                await fetchUserProfile(user.uid);
+                setupEventsListener(); // Start listening for events after user is authenticated
+                setupTasksListener(); // Start listening for tasks after user is authenticated
+                // Only navigate to landing if we are not already on it or an event/task detail/form
+                if (currentView === 'auth' || currentView === 'loading') {
+                    currentView = 'landing';
+                }
+            } else {
+                // No user signed in, attempt anonymous sign-in to allow Firestore operations
+                try {
+                    // Try to sign in with custom token if available (Canvas environment)
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                         await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        // Otherwise, sign in anonymously
+                        await signInAnonymously(auth);
+                    }
+                    // onAuthStateChanged will be triggered again with the new user object
+                } catch (error) {
+                    console.error("Error during anonymous sign-in:", error);
+                    // If anonymous sign-in also fails, then go to auth screen
+                    currentUser = null; // Ensure currentUser is null to show login
+                    currentView = 'auth';
+                    showNotification(`Anonymous authentication failed: ${error.message}. Please try logging in.`, 'error');
+                }
+            }
+            renderApp(); // Initial render after auth state is determined
+        });
+
+
+        // --- Render Functions for each component ---
+
+        function renderLoadingSpinner() {
+            appRoot.innerHTML = `
+                <div class="flex items-center justify-center min-h-screen">
+                    <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500"></div>
+                    <p class="ml-4 text-lg text-gray-700">Loading Personal Assistant...</p>
+                </div>
+            `;
+        }
+
+        function renderAuthScreen() {
+            let errorHtml = '';
+            let messageHtml = '';
+
+            if (authScreenError) {
+                errorHtml = `<div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-md text-sm flex items-center"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-alert-triangle mr-2"><path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>${authScreenError}</div>`;
+            }
+            if (authScreenMessage) {
+                messageHtml = `<div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded-md text-sm">${authScreenMessage}</div>`;
+            }
+
+            let formHtml = '';
+            let titleText = '';
+
+            if (authScreen === 'login') {
+                titleText = "Welcome back! Please sign in.";
+                formHtml = `
+                    <form id="login-form" class="space-y-6">
+                        <div>
+                            <label class="${commonLabelClass}">Email</label>
+                            <input type="email" id="login-email" placeholder="you@example.com" class="${commonInputClass}" required value="${authInputEmail}">
+                        </div>
+                        <div>
+                            <label class="${commonLabelClass}">Password</label>
+                            <div class="relative">
+                                <input type="${showPasswordState ? 'text' : 'password'}" id="login-password" placeholder="••••••••" class="${commonInputClass}" required value="${authInputPassword}">
+                                <button type="button" id="toggle-login-password" class="absolute inset-y-0 right-0 px-3 flex items-center text-slate-500 hover:text-blue-600">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-${showPasswordState ? 'eye-off' : 'eye'}"></svg>
+                                </button>
+                            </div>
+                        </div>
+                        <button type="submit" class="${commonButtonClass} bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300">Sign In</button>
+                        <div class="text-sm text-center">
+                            <button type="button" id="forgot-password-btn" class="font-medium text-blue-600 hover:text-blue-500">Forgot password?</button>
+                        </div>
+                    </form>
+                `;
+            } else if (authScreen === 'register') {
+                titleText = "Create your account to get started.";
+                formHtml = `
+                    <form id="register-form" class="space-y-4">
+                         <div>
+                            <label class="${commonLabelClass}">Full Name</label>
+                            <input type="text" id="register-name" placeholder="John Doe" class="${commonInputClass}" required value="${authInputName}">
+                        </div>
+                        <div>
+                            <label class="${commonLabelClass}">Email</label>
+                            <input type="email" id="register-email" placeholder="you@example.com" class="${commonInputClass}" required value="${authInputEmail}">
+                        </div>
+                         <div>
+                            <label class="${commonLabelClass}">Phone (Optional)</label>
+                            <input type="tel" id="register-phone" placeholder="123-456-7890" class="${commonInputClass}" value="${authInputPhone}">
+                        </div>
+                        <div>
+                            <label class="${commonLabelClass}">Password</label>
+                             <div class="relative">
+                                <input type="${showPasswordState ? 'text' : 'password'}" id="register-password" placeholder="Minimum 6 characters" class="${commonInputClass}" required value="${authInputPassword}">
+                                <button type="button" id="toggle-register-password" class="absolute inset-y-0 right-0 px-3 flex items-center text-slate-500 hover:text-blue-600">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-${showPasswordState ? 'eye-off' : 'eye'}"></svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="${commonLabelClass}">Confirm Password</label>
+                             <div class="relative">
+                                <input type="${showConfirmPasswordState ? 'text' : 'password'}" id="register-confirm-password" placeholder="Re-enter password" class="${commonInputClass}" required value="${authInputConfirmPassword}">
+                                <button type="button" id="toggle-register-confirm-password" class="absolute inset-y-0 right-0 px-3 flex items-center text-slate-500 hover:text-blue-600">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-${showConfirmPasswordState ? 'eye-off' : 'eye'}"></svg>
+                                </button>
+                            </div>
+                        </div>
+                        <button type="submit" class="${commonButtonClass} bg-green-600 hover:bg-green-700 focus:ring-4 focus:ring-green-300">Create Account</button>
+                    </form>
+                `;
+            } else if (authScreen === 'forgotPassword') {
+                titleText = "Reset your password.";
+                formHtml = `
+                    <form id="forgot-password-form" class="space-y-6">
+                        <div>
+                            <label class="${commonLabelClass}">Email</label>
+                            <input type="email" id="forgot-email" placeholder="Enter your registered email" class="${commonInputClass}" required value="${authInputEmail}">
+                        </div>
+                        <button type="submit" class="${commonButtonClass} bg-orange-500 hover:bg-orange-600 focus:ring-4 focus:ring-orange-300">Send Reset Link</button>
+                    </form>
+                `;
+            }
+
+            appRoot.innerHTML = `
+                <div class="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-500 to-indigo-600 p-4">
+                    <div class="w-full max-w-md bg-white rounded-xl shadow-2xl p-8 space-y-6">
+                        <div class="text-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-calendar mx-auto h-16 w-16 text-blue-600 mb-4"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>
+                            <h1 class="text-4xl font-bold text-slate-800">Personal Assistant</h1>
+                            <p class="text-slate-500 mt-2">${titleText}</p>
+                        </div>
+                        ${errorHtml}
+                        ${messageHtml}
+                        ${formHtml}
+                        <div class="text-sm text-center">
+                            ${authScreen === 'login' ?
+                                `<p>Don't have an account? <button id="signup-link" class="font-medium text-blue-600 hover:text-blue-500">Sign up</button></p>` : ''}
+                            ${authScreen === 'register' ?
+                                `<p>Already have an account? <button id="signin-link" class="font-medium text-blue-600 hover:text-blue-500">Sign in</button></p>` : ''}
+                            ${authScreen === 'forgotPassword' ?
+                                `<p>Remembered your password? <button id="signin-link-from-forgot" class="font-medium text-blue-600 hover:text-blue-500">Sign in</button></p>` : ''}
+                        </div>
+                        <p class="text-xs text-center text-slate-400 mt-8">
+                            User ID: ${getUserId()}
+                        </p>
+                    </div>
+                </div>
+            `;
+
+            // Event Listeners for Auth Screen (only attach if elements exist)
+            if (document.getElementById('login-form')) {
+                document.getElementById('login-form').onsubmit = handleLogin;
+                document.getElementById('forgot-password-btn').onclick = () => setAuthScreen('forgotPassword');
+                document.getElementById('toggle-login-password').onclick = () => {
+                    showPasswordState = !showPasswordState;
+                    renderAuthScreen();
+                };
+                document.getElementById('login-email').oninput = (e) => authInputEmail = e.target.value;
+                document.getElementById('login-password').oninput = (e) => authInputPassword = e.target.value;
+            }
+            if (document.getElementById('register-form')) {
+                document.getElementById('register-form').onsubmit = handleRegister;
+                document.getElementById('toggle-register-password').onclick = () => {
+                    showPasswordState = !showPasswordState;
+                    renderAuthScreen();
+                };
+                document.getElementById('toggle-register-confirm-password').onclick = () => {
+                    showConfirmPasswordState = !showConfirmPasswordState;
+                    renderAuthScreen();
+                };
+                document.getElementById('register-name').oninput = (e) => authInputName = e.target.value;
+                document.getElementById('register-email').oninput = (e) => authInputEmail = e.target.value;
+                document.getElementById('register-phone').oninput = (e) => authInputPhone = e.target.value;
+                document.getElementById('register-password').oninput = (e) => authInputPassword = e.target.value;
+                document.getElementById('register-confirm-password').oninput = (e) => authInputConfirmPassword = e.target.value;
+            }
+            if (document.getElementById('forgot-password-form')) {
+                document.getElementById('forgot-password-form').onsubmit = handlePasswordReset;
+                document.getElementById('forgot-email').oninput = (e) => authInputEmail = e.target.value;
+            }
+
+            if (document.getElementById('signup-link')) {
+                document.getElementById('signup-link').onclick = () => setAuthScreen('register');
+            }
+            if (document.getElementById('signin-link')) {
+                document.getElementById('signin-link').onclick = () => setAuthScreen('login');
+            }
+            if (document.getElementById('signin-link-from-forgot')) {
+                document.getElementById('signin-link-from-forgot').onclick = () => setAuthScreen('login');
+            }
+        }
+
+        function setAuthScreen(screen) {
+            authScreen = screen;
+            authScreenError = ''; // Clear errors on screen change
+            authScreenMessage = ''; // Clear messages on screen change
+            authInputEmail = ''; // Clear inputs
+            authInputPassword = '';
+            authInputConfirmPassword = '';
+            authInputName = '';
+            authInputPhone = '';
+            showPasswordState = false;
+            showConfirmPasswordState = false;
+            renderApp();
+        }
+
+        async function handleRegister(e) {
+            e.preventDefault();
+            authScreenError = '';
+            authScreenMessage = '';
+            if (authInputPassword !== authInputConfirmPassword) {
+                authScreenError = "Passwords do not match.";
+                renderAuthScreen();
+                return;
+            }
+            if (authInputPassword.length < 6) {
+                authScreenError = "Password should be at least 6 characters long.";
+                renderAuthScreen();
+                return;
+            }
+            try {
+                const userCredential = await createUserWithEmailAndPassword(auth, authInputEmail, authInputPassword);
+                const user = userCredential.user;
+                console.log("Registered user UID:", user.uid); // Debugging log
+
+                await updateProfile(user, { displayName: authInputName });
+
+                const userDocRef = doc(db, `artifacts/${appId}/users/${user.uid}/profile`, 'userData');
+                await setDoc(userDocRef, {
+                    name: authInputName,
+                    email: user.email,
+                    phone: authInputPhone,
+                    photoURL: '',
+                    createdAt: new Date().toISOString(),
+                });
+
+                authScreenMessage = "Registration successful! Please log in.";
+                showNotification("Registration successful! Please log in.", "success");
+                setAuthScreen('login');
+            } catch (err) {
+                if (err.code === 'auth/operation-not-allowed') {
+                    authScreenError = "Registration failed: Email/Password sign-in is not enabled for this project. Please contact the administrator or check your Firebase console settings.";
+                } else {
+                    authScreenError = err.message;
+                }
+                console.error("Registration error:", err, err.code);
+                showNotification(`Registration failed: ${err.message}`, 'error');
+                renderAuthScreen();
+            }
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            authScreenError = '';
+            authScreenMessage = '';
+            try {
+                const userCredential = await signInWithEmailAndPassword(auth, authInputEmail, authInputPassword);
+                console.log("Logged in user UID:", userCredential.user.uid); // Debugging log
+                showNotification("Logged in successfully!", "success");
+            } catch (err) {
+                 if (err.code === 'auth/operation-not-allowed') {
+                    authScreenError = "Login failed: Email/Password sign-in is not enabled for this project. Please contact the administrator or check your Firebase console settings.";
+                } else if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+                    authScreenError = "Invalid email or password. Please try again.";
+                }
+                else {
+                    authScreenError = err.message;
+                }
+                console.error("Login error:", err);
+                showNotification(`Login failed: ${err.message}`, 'error');
+                renderAuthScreen();
+            }
+        }
+
+        async function handlePasswordReset(e) {
+            e.preventDefault();
+            authScreenError = '';
+            authScreenMessage = '';
+            if (!authInputEmail) {
+                authScreenError = "Please enter your email address to reset password.";
+                renderAuthScreen();
+                return;
+            }
+            try {
+                await sendPasswordResetEmail(auth, authInputEmail);
+                authScreenMessage = "Password reset email sent! Check your inbox.";
+                showNotification("Password reset email sent! Check your inbox.", "success");
+                renderAuthScreen();
+            } catch (err) {
+                authScreenError = err.message;
+                console.error("Password reset error:", err);
+                showNotification(`Password reset failed: ${err.message}`, 'error');
+                renderAuthScreen();
+            }
+        }
+
+        function renderLandingPage() {
+            const placeholderImage = `https://placehold.co/100x100/E0E7FF/4F46E5?text=${userProfile.name ? userProfile.name.charAt(0).toUpperCase() : 'U'}`;
+            const profilePhoto = userProfile.photoURL || placeholderImage;
+
+            appRoot.innerHTML = `
+                <div class="flex flex-col h-screen">
+                    <header class="h-1/4 bg-white shadow-md p-4 md:p-6 flex flex-col md:flex-row items-center justify-between space-y-4 md:space-y-0">
+                        <div class="flex items-center space-x-4">
+                            <img src="${profilePhoto}" alt="${userProfile.name || "User"}"
+                                class="w-16 h-16 md:w-24 md:h-24 rounded-full border-4 border-blue-200 object-cover shadow-lg"
+                                onerror="this.onerror=null;this.src='${placeholderImage}';"
+                            />
+                            <div>
+                                <h2 class="text-xl md:text-3xl font-bold text-slate-800">${userProfile.name || "User Name"}</h2>
+                                <p class="text-sm md:text-base text-slate-600 flex items-center"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-mail mr-2 text-blue-500"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>${userProfile.email || "user@example.com"}</p>
+                                <p class="text-sm md:text-base text-slate-600 flex items-center"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-phone mr-2 text-green-500"><path d="M22 16.92v3a2 2 0 0 1-2.18 2.02 15.15 15.15 0 0 1-12.62-6.32A15.15 15.15 0 0 1 2.02 4.18 2 2 0 0 1 4.02 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>${userProfile.phone || "No phone number"}</p>
+                                <button id="edit-profile-btn"
+                                    class="mt-2 text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-edit-3 mr-1"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Edit Profile
+                                </button>
+                            </div>
+                        </div>
+                        <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3">
+                            <button id="new-event-btn"
+                                class="flex items-center justify-center bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-plus-circle mr-2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg> New Event
+                            </button>
+                            <button id="new-task-btn"
+                                class="flex items-center justify-center bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-plus-circle mr-2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg> New Task
+                            </button>
+                            <button id="sign-out-btn"
+                                class="flex items-center justify-center bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-log-out mr-2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="17 16 22 12 17 8"/><line x1="22" x2="10" y1="12" y2="12"/></svg> Sign Out
+                            </button>
+                        </div>
+                    </header>
+                    <main class="h-3/4 bg-slate-50 p-4 md:p-6 overflow-y-auto flex flex-col">
+                        <!-- Common Calendar Navigation -->
+                        <div class="flex items-center justify-between mb-4 md:mb-6 bg-white p-4 rounded-lg shadow-sm">
+                            <div class="flex items-center space-x-1 md:space-x-2">
+                                <button id="prev-year-btn" class="p-2 rounded-md hover:bg-slate-200 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-left"><path d="m15 18-6-6 6-6"/></svg></button>
+                                <h3 class="text-lg md:text-xl font-semibold text-slate-700 w-20 md:w-24 text-center">${calendarCurrentDate.getFullYear()}</h3>
+                                <button id="next-year-btn" class="p-2 rounded-md hover:bg-slate-200 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right"><path d="m9 18 6-6-6-6"/></svg></button>
+                            </div>
+                            <h3 class="text-lg md:text-xl font-semibold text-slate-700 text-center flex-grow">
+                                ${calendarCurrentDate.toLocaleString('default', { month: 'long' })}
+                            </h3>
+                            <div class="flex items-center space-x-1 md:space-x-2">
+                                <button id="prev-month-btn" class="p-2 rounded-md hover:bg-slate-200 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-left"><path d="m15 18-6-6 6-6"/></svg></button>
+                                <button id="today-btn" class="p-2 rounded-md text-sm font-medium text-blue-600 hover:bg-blue-100 transition-colors">Today</button>
+                                <button id="next-month-btn" class="p-2 rounded-md hover:bg-slate-200 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right"><path d="m9 18 6-6-6-6"/></svg></button>
+                            </div>
+                        </div>
+
+                        <div class="flex border-b border-slate-300 mb-4">
+                            <button id="calendar-tab-btn" class="py-2 px-4 text-sm font-medium ${currentTab === 'calendar' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 hover:text-blue-600'} transition-colors">Calendar View</button>
+                            <button id="list-tab-btn" class="py-2 px-4 text-sm font-medium ${currentTab === 'list' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 hover:text-blue-600'} transition-colors">List View</button>
+                        </div>
+                        <div id="tab-content" class="flex-grow"></div>
+                    </main>
+                </div>
+            `;
+            document.getElementById('edit-profile-btn').onclick = () => {
+                showProfileModal = true;
+                renderApp();
+            };
+            // Modified to open modals
+            document.getElementById('new-event-btn').onclick = () => navigateTo('newEvent');
+            document.getElementById('new-task-btn').onclick = () => navigateTo('newTask');
+            document.getElementById('sign-out-btn').onclick = handleSignOut;
+
+            // Attach event listeners to COMMON calendar controls
+            document.getElementById('prev-year-btn').onclick = () => changeCalendarYear(-1);
+            document.getElementById('next-year-btn').onclick = () => changeCalendarYear(1);
+            document.getElementById('prev-month-btn').onclick = () => changeCalendarMonth(-1);
+            document.getElementById('next-month-btn').onclick = () => changeCalendarMonth(1);
+            document.getElementById('today-btn').onclick = () => {
+                calendarCurrentDate = new Date();
+                renderApp(); // Re-render to update both calendar and list
+            };
+
+
+            document.getElementById('calendar-tab-btn').onclick = () => {
+                currentTab = 'calendar';
+                renderApp();
+            };
+            document.getElementById('list-tab-btn').onclick = () => {
+                currentTab = 'list';
+                renderApp();
+            };
+
+            const tabContentContainer = document.getElementById('tab-content');
+            if (currentTab === 'calendar') {
+                tabContentContainer.innerHTML = `<div id="calendar-view-container"></div>`;
+                renderCalendarView();
+            } else {
+                tabContentContainer.innerHTML = `<div id="list-view-container"></div>`;
+                renderListView();
+            }
+
+            if (showProfileModal) {
+                renderProfileModal();
+            }
+        }
+
+        async function handleSignOut() {
+            try {
+                await signOut(auth);
+                // After signOut, onAuthStateChanged will be triggered,
+                // which will reset currentUser to null and navigate to auth screen.
+                showNotification('Signed out successfully!', 'success');
+            } catch (error) {
+                console.error("Sign out error:", error);
+                showNotification(`Error signing out: ${error.message}`, 'error');
+            }
+        }
+
+        function renderProfileModal() {
+            const modalHtml = `
+                <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 transition-opacity duration-300 ease-in-out">
+                    <div class="bg-white rounded-xl shadow-2xl p-6 md:p-8 w-full max-w-lg transform transition-all duration-300 ease-in-out scale-95 opacity-0 animate-modalEnter">
+                        <div class="flex justify-between items-center mb-6">
+                            <h3 class="text-2xl font-semibold text-slate-800">Edit Profile</h3>
+                            <button id="close-profile-modal" class="text-slate-400 hover:text-slate-600 transition-colors">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-plus-circle transform rotate-45"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>
+                            </button>
+                        </div>
+                        <div id="profile-modal-error" class="hidden bg-red-100 border-l-4 border-red-500 text-red-700 p-3 rounded-md text-sm mb-4 flex items-center"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-alert-triangle mr-2"><path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div>
+                        <form id="profile-form" class="space-y-5">
+                            <div>
+                                <label for="profile-name" class="${commonLabelClass}">Full Name</label>
+                                <input type="text" id="profile-name" placeholder="Your full name" class="${commonInputClass}" required value="${userProfile.name || ''}">
+                            </div>
+                            <div>
+                                <label for="profile-email" class="${commonLabelClass}">Email</label>
+                                <input type="email" id="profile-email" class="${commonInputClass} bg-slate-200 cursor-not-allowed" readonly title="Email cannot be changed here" value="${userProfile.email || ''}">
+                            </div>
+                            <div>
+                                <label for="profile-phone" class="${commonLabelClass}">Phone Number</label>
+                                <input type="tel" id="profile-phone" placeholder="e.g., 123-456-7890" class="${commonInputClass}" value="${userProfile.phone || ''}">
+                            </div>
+                            <div>
+                                <label for="profile-photoURL" class="${commonLabelClass}">Photo URL</label>
+                                <input type="text" id="profile-photoURL" placeholder="https://example.com/image.png" class="${commonInputClass}" value="${userProfile.photoURL || ''}">
+                                <p class="text-xs text-slate-500 mt-1">Enter a URL for your profile picture.</p>
+                            </div>
+                            <div class="flex justify-end space-x-3 pt-2">
+                                <button type="button" id="profile-cancel-btn" class="px-5 py-2.5 rounded-lg text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors">
+                                    Cancel
+                                </button>
+                                <button type="submit" id="profile-save-btn" class="px-5 py-2.5 rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors focus:ring-4 focus:ring-blue-300">
+                                    Save Changes
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            `;
+            appRoot.insertAdjacentHTML('beforeend', modalHtml); // Append modal to app root
+
+            const modalElement = appRoot.lastElementChild; // Get the newly added modal
+            const profileNameInput = modalElement.querySelector('#profile-name');
+            const profilePhoneInput = modalElement.querySelector('#profile-phone');
+            const profilePhotoURLInput = modalElement.querySelector('#profile-photoURL');
+            const profileModalErrorDiv = modalElement.querySelector('#profile-modal-error');
+
+            modalElement.querySelector('#close-profile-modal').onclick = () => {
+                showProfileModal = false;
+                modalElement.remove(); // Remove modal from DOM
+            };
+            modalElement.querySelector('#profile-cancel-btn').onclick = () => {
+                showProfileModal = false;
+                modalElement.remove();
+            };
+            modalElement.querySelector('#profile-form').onsubmit = async (e) => {
+                e.preventDefault();
+                profileModalErrorDiv.classList.add('hidden'); // Hide previous error
+
+                const name = profileNameInput.value.trim();
+                const phone = profilePhoneInput.value;
+                const photoURL = profilePhotoURLInput.value;
+
+                if (!name) {
+                    profileModalErrorDiv.classList.remove('hidden');
+                    profileModalErrorDiv.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-alert-triangle mr-2"><path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>Name cannot be empty.`;
+                    return;
+                }
+
+                await handleUpdateProfile({ ...userProfile, name, phone, photoURL });
+                modalElement.remove(); // Remove modal after update
+            };
+        }
+
+        let calendarCurrentDate = new Date();
+        let selectedDayEvents = [];
+        let selectedDayTasks = []; // New state for tasks on selected day
+        let showDayDetailsModal = false;
+        let dateForNewEntry = null;
+
+        function daysInMonth(year, month) { return new Date(year, month + 1, 0).getDate(); }
+        function firstDayOfMonth(year, month) { return new Date(year, month, 1).getDay(); }
+
+        function changeCalendarMonth(offset) {
+            calendarCurrentDate = new Date(calendarCurrentDate.getFullYear(), calendarCurrentDate.getMonth() + offset, 1);
+            renderApp(); // Re-render to update both calendar and list
+        }
+
+        function changeCalendarYear(offset) {
+            calendarCurrentDate = new Date(calendarCurrentDate.getFullYear() + offset, calendarCurrentDate.getMonth(), 1);
+            renderApp(); // Re-render to update both calendar and list
+        }
+
+        function handleDayClick(day) {
+            const year = calendarCurrentDate.getFullYear();
+            const month = calendarCurrentDate.getMonth();
+            const dayDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            
+            // Generate occurrences for the current month and then filter for the specific day
+            const allEventsForMonth = generateOccurrencesForMonth(userEvents, 'event', year, month);
+            const allTasksForMonth = generateOccurrencesForMonth(userTasks, 'task', year, month);
+
+            selectedDayEvents = allEventsForMonth.filter(event => event.startDate && event.startDate.startsWith(dayDateStr));
+            selectedDayTasks = allTasksForMonth.filter(task => task.startDate && task.startDate.startsWith(dayDateStr));
+            
+            selectedDayEvents.sort((a,b) => (a.startTime || '00:00').localeCompare(b.startTime || '00:00'));
+            selectedDayTasks.sort((a,b) => (a.startTime || '00:00').localeCompare(b.startTime || '00:00'));
+
+            dateForNewEntry = dayDateStr;
+            showDayDetailsModal = true;
+            renderDayDetailsModal();
+        }
+
+        function handleDayDoubleClick(day) {
+            const year = calendarCurrentDate.getFullYear();
+            const month = calendarCurrentDate.getMonth();
+            const dayDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            
+            showConfirmModal(
+                "Create New Entry",
+                `Would you like to create a new Event or a new Task for ${dayDateStr}?`
+                ,
+                () => navigateTo('newEvent', { startDate: dayDateStr }), // On Confirm: New Event
+                () => navigateTo('newTask', { startDate: dayDateStr }), // On Cancel: New Task (using cancel callback for other option)
+                "New Event",
+                "New Task",
+                "bg-blue-600 hover:bg-blue-700" // Custom class for confirm button
+            );
+        }
+
+        /**
+         * Generates occurrences for recurring events/tasks within a given month.
+         * @param {Array} originalEntries - Array of original event/task objects.
+         * @param {string} type - 'event' or 'task'.
+         * @param {number} targetYear - The year to generate occurrences for.
+         * @param {number} targetMonth - The 0-indexed month to generate occurrences for.
+         * @returns {Array} - Array of all entries (original + generated occurrences) for the month.
+         */
+        function generateOccurrencesForMonth(originalEntries, type, targetYear, targetMonth) {
+            const occurrences = [];
+            const startOfMonth = new Date(targetYear, targetMonth, 1);
+            const endOfMonth = new Date(targetYear, targetMonth + 1, 0); // Last day of the month
+
+            originalEntries.forEach(entry => {
+                // Always include the original entry if its start date is within or before the current month
+                const entryStartDate = new Date(entry.startDate + "T00:00:00");
+                const entryEndDate = entry.endDate ? new Date(entry.endDate + "T00:00:00") : null;
+
+                // Add original if it falls in or before the current month and is not recurring OR is recurring but should be added once
+                if (entry.recurrence === 'none' &&
+                    entryStartDate.getFullYear() === targetYear && entryStartDate.getMonth() === targetMonth) {
+                    occurrences.push({ ...entry, isOccurrence: false });
+                    return; // Skip recurrence generation for non-recurring events
+                }
+
+                if (entry.recurrence === 'none') return; // Skip if non-recurring and not in target month
+
+                // For recurring events, generate instances within the target month
+                let currentDate = new Date(entry.startDate + "T00:00:00");
+                // If the event started in a previous month, find the first occurrence in the target month
+                while (currentDate < startOfMonth) {
+                    if (entry.recurrence === 'daily') {
+                        currentDate.setDate(currentDate.getDate() + 1);
+                    } else if (entry.recurrence === 'weekly') {
+                        currentDate.setDate(currentDate.getDate() + 7);
+                    } else if (entry.recurrence === 'monthly') {
+                        // Advance to next month, keeping the same day of the month.
+                        // Handle cases where day is greater than days in next month.
+                        const originalDay = currentDate.getDate();
+                        currentDate.setMonth(currentDate.getMonth() + 1);
+                        if (currentDate.getDate() !== originalDay) {
+                            currentDate.setDate(0); // Set to last day of previous month (i.e., current month)
+                        }
+                    } else if (entry.recurrence === 'yearly') {
+                        currentDate.setFullYear(currentDate.getFullYear() + 1);
+                    } else {
+                        break; // Unknown recurrence, stop
+                    }
+                }
+
+                // Generate occurrences until the end of the target month or entry's end date
+                while (currentDate <= endOfMonth) {
+                    // Check if recurring event has an end date and if current occurrence is past it
+                    if (entryEndDate && currentDate > entryEndDate) {
+                        break;
+                    }
+
+                    // Only add if it falls within the target month
+                    if (currentDate.getFullYear() === targetYear && currentDate.getMonth() === targetMonth) {
+                        const newOccurrence = {
+                            ...entry,
+                            id: `${entry.id}-${currentDate.toISOString().split('T')[0]}`, // Unique ID for occurrence
+                            startDate: currentDate.toISOString().split('T')[0],
+                            isOccurrence: true, // Mark as generated occurrence
+                            originalId: entry.id, // Reference to original event
+                            originalStartDate: entry.startDate // Store original start date for reference
+                        };
+                        occurrences.push(newOccurrence);
+                    }
+
+                    // Advance to the next occurrence
+                    if (entry.recurrence === 'daily') {
+                        currentDate.setDate(currentDate.getDate() + 1);
+                    } else if (entry.recurrence === 'weekly') {
+                        currentDate.setDate(currentDate.getDate() + 7);
+                    } else if (entry.recurrence === 'monthly') {
+                        const originalDay = currentDate.getDate();
+                        currentDate.setMonth(currentDate.getMonth() + 1);
+                        if (currentDate.getDate() !== originalDay) {
+                            currentDate.setDate(0); // Set to last day of previous month (i.e., current month)
+                        }
+                    } else if (entry.recurrence === 'yearly') {
+                        currentDate.setFullYear(currentDate.getFullYear() + 1);
+                    } else {
+                        break; // Should not happen for valid recurrences
+                    }
+                }
+            });
+            return occurrences;
+        }
+
+        function renderCalendarView() {
+            const calendarContainer = document.getElementById('calendar-view-container');
+            if (!calendarContainer) return; // Exit if container not found
+
+            const year = calendarCurrentDate.getFullYear();
+            const month = calendarCurrentDate.getMonth();
+            const numDays = daysInMonth(year, month);
+            const firstDay = firstDayOfMonth(year, month); // 0 for Sunday, 1 for Monday, etc.
+            const today = new Date();
+            today.setHours(0,0,0,0);
+
+            // Generate occurrences for the current month
+            const allEvents = generateOccurrencesForMonth(userEvents, 'event', year, month);
+            const allTasks = generateOccurrencesForMonth(userTasks, 'task', year, month);
+
+            let daysHtml = '';
+            for (let i = 0; i < firstDay; i++) {
+                daysHtml += `<div class="border border-slate-200 bg-slate-50 p-1 h-20 md:h-28"></div>`;
+            }
+
+            for (let day = 1; day <= numDays; day++) {
+                const dayDate = new Date(year, month, day);
+                const dayDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                
+                const eventsOnThisDay = allEvents.filter(event => event.startDate && event.startDate.startsWith(dayDateStr));
+                const tasksOnThisDay = allTasks.filter(task => task.startDate && task.startDate.startsWith(dayDateStr));
+                const isToday = dayDate.getTime() === today.getTime();
+
+                // Sort events and tasks by time for consistent display
+                eventsOnThisDay.sort((a,b) => (a.startTime || '00:00').localeCompare(b.startTime || '00:00'));
+                tasksOnThisDay.sort((a,b) => (a.startTime || '00:00').localeCompare(b.startTime || '00:00'));
+
+                let entryBubblesHtml = '';
+                let entriesCount = 0;
+
+                // Display up to 1 event and up to 1 task in the tile, show count for more
+                if (eventsOnThisDay.length > 0) {
+                    entryBubblesHtml += `
+                        <div class="p-1 bg-blue-500 text-white text-[10px] md:text-xs rounded truncate leading-tight"
+                            title="${eventsOnThisDay[0].name}: ${eventsOnThisDay[0].description || ''} (${eventsOnThisDay[0].startTime || ''})"
+                        >
+                            Event: ${eventsOnThisDay[0].name}
+                        </div>
+                    `;
+                    entriesCount += eventsOnThisDay.length;
+                }
+                if (tasksOnThisDay.length > 0) {
+                    entryBubblesHtml += `
+                        <div class="p-1 bg-purple-500 text-white text-[10px] md:text-xs rounded truncate leading-tight"
+                            title="${tasksOnThisDay[0].name}: ${tasksOnThisDay[0].description || ''} (${tasksOnThisDay[0].startTime || ''})"
+                        >
+                            Task: ${tasksOnThisDay[0].name}
+                        </div>
+                    `;
+                    entriesCount += tasksOnThisDay.length;
+                }
+
+                const remainingEntries = entriesCount - (eventsOnThisDay.length > 0 ? 1 : 0) - (tasksOnThisDay.length > 0 ? 1 : 0);
+                if (remainingEntries > 0) {
+                    entryBubblesHtml += `<div class="mt-1 text-[10px] md:text-xs text-slate-600 font-medium text-center"> +${remainingEntries} more</div>`;
+                }
+
+                daysHtml += `
+                    <div class="border border-slate-200 p-1 md:p-2 h-20 md:h-28 overflow-y-auto cursor-pointer hover:bg-blue-50 transition-colors duration-150 ${isToday ? 'bg-indigo-50' : 'bg-white'}"
+                        data-day="${day}"
+                    >
+                        <div class="text-xs md:text-sm font-semibold text-right pr-1 ${isToday ? 'text-indigo-600 font-bold' : 'text-slate-700'}">${day}</div>
+                        <div class="space-y-1">
+                            ${entryBubblesHtml}
+                        </div>
+                    </div>
+                `;
+            }
+
+            const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+            calendarContainer.innerHTML = `
+                <div class="bg-white p-4 md:p-6 rounded-xl shadow-lg h-full flex flex-col">
+                    <div class="grid grid-cols-7 gap-px bg-slate-200 border-t border-l border-slate-200 flex-grow">
+                        ${dayNames.map(day => `<div class="text-center font-medium text-xs md:text-sm text-slate-500 py-2 bg-slate-100 border-b border-r border-slate-200">${day}</div>`).join('')}
+                        ${daysHtml}
+                    </div>
+                </div>
+            `;
+
+            // Attach event listeners to individual day cells
+            calendarContainer.querySelectorAll('[data-day]').forEach(dayCell => {
+                dayCell.onclick = (e) => {
+                    handleDayClick(parseInt(dayCell.dataset.day));
+                };
+                dayCell.ondblclick = (e) => {
+                    handleDayDoubleClick(parseInt(dayCell.dataset.day));
+                };
+            });
+            lucide.createIcons(); // Re-create icons for the new content
+        }
+
+        // Renamed from renderEventListModal to be more general
+        function renderDayDetailsModal() {
+            const formattedDate = dateForNewEntry ? new Date(dateForNewEntry + "T00:00:00Z").toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }) : "Details";
+
+            let detailsListHtml = '';
+            if (selectedDayEvents.length > 0 || selectedDayTasks.length > 0) {
+                detailsListHtml = `<ul class="space-y-3 max-h-80 overflow-y-auto">`;
+                
+                // Display Events
+                if (selectedDayEvents.length > 0) {
+                    detailsListHtml += `<li class="font-bold text-slate-700 pt-2 pb-1">Events:</li>`;
+                    selectedDayEvents.forEach(event => {
+                        detailsListHtml += `
+                            <li class="p-3 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 cursor-pointer transition-colors" data-type="event" data-id="${event.id}" data-original-id="${event.originalId || event.id}">
+                                <p class="font-semibold text-blue-700">${event.name}</p>
+                                <p class="text-sm text-slate-600 truncate">${event.description || "No description"}</p>
+                                <p class="text-xs text-slate-500">
+                                    ${event.startTime} ${event.endTime ? ` - ${event.endTime}` : ''}
+                                </p>
+                            </li>
+                        `;
+                    });
+                }
+
+                // Display Tasks
+                if (selectedDayTasks.length > 0) {
+                    detailsListHtml += `<li class="font-bold text-slate-700 pt-4 pb-1">Tasks:</li>`;
+                    selectedDayTasks.forEach(task => {
+                        detailsListHtml += `
+                            <li class="p-3 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 cursor-pointer transition-colors" data-type="task" data-id="${task.id}" data-original-id="${task.originalId || task.id}">
+                                <p class="font-semibold text-purple-700">${task.name}</p>
+                                <p class="text-sm text-slate-600">Type: ${task.type || 'General'}</p>
+                                <p class="text-sm text-slate-600 truncate">${task.description || "No description"}</p>
+                                <p class="text-xs text-slate-500">
+                                    ${task.startTime} ${task.endTime ? ` - ${task.endTime}` : ''}
+                                </p>
+                            </li>
+                        `;
+                    });
+                }
+
+                detailsListHtml += `</ul>`;
+            } else {
+                detailsListHtml = `<p class="text-slate-500 py-4 text-center">No events or tasks scheduled for this day.</p>`;
+            }
+
+            const modalHtml = `
+                <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md md:max-w-lg animate-modalEnter">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-xl font-semibold text-slate-800">Details for ${formattedDate}</h3>
+                            <button id="close-day-details-modal" class="text-slate-400 hover:text-slate-600">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-plus-circle transform rotate-45"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>
+                            </button>
+                        </div>
+                        ${detailsListHtml}
+                        <div class="mt-6 flex justify-end space-x-3">
+                            <button id="add-new-event-from-modal"
+                                class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 flex items-center"
+                            >
+                               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-plus-circle mr-2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg> Add Event
+                            </button>
+                            <button id="add-new-task-from-modal"
+                                class="bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 flex items-center"
+                            >
+                               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-plus-circle mr-2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg> Add Task
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            appRoot.insertAdjacentHTML('beforeend', modalHtml);
+            const modalElement = appRoot.lastElementChild;
+
+            modalElement.querySelector('#close-day-details-modal').onclick = () => {
+                showDayDetailsModal = false;
+                modalElement.remove();
+            };
+            modalElement.querySelector('#add-new-event-from-modal').onclick = () => {
+                navigateTo('newEvent', { startDate: dateForNewEntry });
+                showDayDetailsModal = false;
+                modalElement.remove();
+            };
+            modalElement.querySelector('#add-new-task-from-modal').onclick = () => {
+                navigateTo('newTask', { startDate: dateForNewEntry });
+                showDayDetailsModal = false;
+                modalElement.remove();
+            };
+
+            modalElement.querySelectorAll('[data-id]').forEach(itemLi => {
+                itemLi.onclick = () => {
+                    const id = itemLi.dataset.originalId || itemLi.dataset.id; // Use originalId for recurring
+                    const type = itemLi.dataset.type;
+                    if (type === 'event') {
+                        const entry = userEvents.find(e => e.id === id);
+                        navigateTo('eventDetail', entry);
+                    } else if (type === 'task') {
+                        const entry = userTasks.find(t => t.id === id);
+                        navigateTo('taskDetail', entry);
+                    }
+                    showDayDetailsModal = false;
+                    modalElement.remove();
+                };
+            });
+            lucide.createIcons(); // Re-create icons for the new modal content
+        }
+
+        // --- New: List View Rendering ---
+        function renderListView() {
+            const listContainer = document.getElementById('list-view-container');
+            if (!listContainer) return;
+
+            const now = new Date();
+            now.setHours(0, 0, 0, 0); // Normalize to start of day
+
+            // Generate occurrences for the current month
+            const year = calendarCurrentDate.getFullYear();
+            const month = calendarCurrentDate.getMonth();
+            const allEventsForMonth = generateOccurrencesForMonth(userEvents, 'event', year, month);
+            const allTasksForMonth = generateOccurrencesForMonth(userTasks, 'task', year, month);
+
+            let eventsHtml = '';
+            let tasksHtml = '';
+
+            if (allEventsForMonth.length === 0 && allTasksForMonth.length === 0) {
+                listContainer.innerHTML = `
+                    <div class="bg-white p-6 rounded-xl shadow-lg text-center text-slate-600">
+                        No events or tasks scheduled for ${calendarCurrentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}.
+                        Add some using the "New Event" or "New Task" buttons, or by double-clicking a day on the Calendar.
+                    </div>
+                `;
+                return;
+            }
+
+            // Function to generate HTML for a single entry (event or task)
+            const generateEntryHtml = (entry, type) => {
+                const entryDate = new Date(entry.startDate + "T00:00:00");
+                const formattedTime = entry.startTime ? ` at ${entry.startTime}` : '';
+                const formattedDate = entryDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+                let statusClass = 'text-blue-700 bg-blue-50 border-blue-200'; // Upcoming (default)
+                let statusText = 'Upcoming';
+                let isBold = false;
+                let showMarkDone = false;
+
+                if (entry.isCompleted) {
+                    statusClass = 'text-green-700 bg-green-50 border-green-200';
+                    statusText = 'Completed';
+                } else if (entryDate < now) {
+                    statusClass = 'text-red-700 bg-red-50 border-red-200';
+                    statusText = 'Overdue';
+                    showMarkDone = true;
+                } else if (entryDate.getTime() === now.getTime()) {
+                    isBold = true;
+                    statusText = 'Today';
+                    showMarkDone = true;
+                } else {
+                    showMarkDone = true;
+                }
+
+                const markDoneButton = showMarkDone && !entry.isCompleted ? `
+                    <button class="mark-done-btn px-3 py-1 bg-green-500 text-white rounded-md text-xs font-semibold hover:bg-green-600 transition-colors"
+                        data-id="${entry.id}" data-type="${type}" data-original-id="${entry.originalId || entry.id}">
+                        Mark Done
+                    </button>
+                ` : '';
+
+                return `
+                    <li class="p-4 rounded-lg shadow-sm cursor-pointer ${statusClass}" data-id="${entry.id}" data-type="${type}" data-original-id="${entry.originalId || entry.id}">
+                        <div class="flex justify-between items-center mb-2">
+                            <h4 class="font-semibold ${isBold ? 'text-lg md:text-xl font-bold' : 'text-base md:text-lg'}">${entry.name}</h4>
+                            <span class="text-xs font-medium px-2 py-0.5 rounded-full ${entry.isCompleted ? 'bg-green-200 text-green-800' : (entryDate < now && !entry.isCompleted ? 'bg-red-200 text-red-800' : 'bg-blue-200 text-blue-800')}">
+                                ${statusText}
+                            </span>
+                        </div>
+                        <p class="text-sm text-slate-700 mb-2 truncate">${entry.description || 'No description.'}</p>
+                        <p class="text-xs text-slate-600">
+                            ${type === 'task' ? `Type: ${entry.type || 'General'} | ` : ''}
+                            ${formattedDate}${formattedTime}
+                            ${entry.isOccurrence ? `<span class="italic ml-2">(Recurring)</span>` : ''}
+                        </p>
+                        ${markDoneButton}
+                    </li>
+                `;
+            };
+
+            // Sort and populate HTML for events and tasks separately
+            allEventsForMonth.sort((a, b) => new Date(a.startDate + (a.startTime || '')) - new Date(b.startDate + (b.startTime || ''))).forEach(event => {
+                eventsHtml += generateEntryHtml(event, 'event');
+            });
+            allTasksForMonth.sort((a, b) => new Date(a.startDate + (a.startTime || '')) - new Date(b.startDate + (b.startTime || ''))).forEach(task => {
+                tasksHtml += generateEntryHtml(task, 'task');
+            });
+
+            listContainer.innerHTML = `
+                <div class="bg-white p-4 md:p-6 rounded-xl shadow-lg h-full flex flex-col">
+                    <h3 class="text-xl md:text-2xl font-bold text-slate-800 mb-6 text-center">
+                        Events & Tasks for ${calendarCurrentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
+                    </h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 overflow-y-auto">
+                        <div>
+                            <h4 class="text-lg font-bold text-blue-700 mb-3">Events</h4>
+                            <ul class="space-y-4">
+                                ${eventsHtml || '<li class="text-slate-500">No events this month.</li>'}
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 class="text-lg font-bold text-purple-700 mb-3">Tasks</h4>
+                            <ul class="space-y-4">
+                                ${tasksHtml || '<li class="text-slate-500">No tasks this month.</li>'}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            listContainer.querySelectorAll('[data-original-id]').forEach(itemElement => {
+                itemElement.onclick = (e) => {
+                    // Prevent marking done from also navigating to detail
+                    if (e.target.classList.contains('mark-done-btn')) return;
+
+                    // When clicking a recurring occurrence, navigate to the original event's detail page
+                    const originalId = itemElement.dataset.originalId;
+                    const type = itemElement.dataset.type;
+                    if (type === 'event') {
+                        const entry = userEvents.find(e => e.id === originalId);
+                        navigateTo('eventDetail', entry);
+                    } else if (type === 'task') {
+                        const entry = userTasks.find(t => t.id === originalId);
+                        navigateTo('taskDetail', entry);
+                    }
+                };
+            });
+
+            listContainer.querySelectorAll('.mark-done-btn').forEach(button => {
+                button.onclick = async (e) => {
+                    e.stopPropagation(); // Prevent the parent <li> click from firing
+                    const id = e.target.dataset.originalId; // Use originalId for marking as done
+                    const type = e.target.dataset.type;
+
+                    showConfirmModal(
+                        "Mark as Done",
+                        `Are you sure you want to mark this ${type} as done?`
+                        ,
+                        async () => {
+                            try {
+                                const userIdToUse = currentUser?.uid; // currentUser.uid will be set by auth listener
+                                const collectionRef = collection(db, `artifacts/${appId}/users/${userIdToUse}/${type === 'event' ? 'events' : 'tasks'}`);
+                                const docRef = doc(collectionRef, id);
+                                await updateDoc(docRef, { isCompleted: true });
+                                showNotification(`${type.charAt(0).toUpperCase() + type.slice(1)} marked as done!`, 'success');
+                            } catch (error) {
+                                console.error(`Error marking ${type} as done:`, error);
+                                showNotification(`Failed to mark ${type} as done: ${error.message}. Ensure Firebase is configured and security rules allow writes.`, 'error');
+                            }
+                        },
+                        () => { /* Cancelled */ },
+                        "Yes, Mark Done",
+                        "Cancel",
+                        "bg-green-600 hover:bg-green-700"
+                    );
+                };
+            });
+            lucide.createIcons(); // Re-create icons for the new content
+        }
+
+
+        let eventFormIsLoading = false;
+        let eventFormError = '';
+
+        // Renamed to renderEventFormModal
+        function renderEventFormModal() {
+            const container = eventFormModalContainer;
+            if (!showEventFormModal) {
+                container.innerHTML = ''; // Clear modal content if not visible
+                return;
+            }
+
+            const isEditMode = isEditingEvent;
+            const initialStartDate = selectedEvent?.startDate || dateForNewEntry || new Date().toISOString().split('T')[0];
+
+            const eventName = isEditMode ? selectedEvent.name : '';
+            const eventDescription = isEditMode ? selectedEvent.description : '';
+            const startDate = isEditMode ? selectedEvent.startDate : initialStartDate;
+            const startTime = isEditMode ? selectedEvent.startTime : '09:00';
+            const endDate = isEditMode ? selectedEvent.endDate : '';
+            const endTime = isEditMode ? selectedEvent.endTime : '';
+            const recurrence = isEditMode ? selectedEvent.recurrence : 'none';
+
+            let errorHtml = '';
+            if (eventFormError) {
+                errorHtml = `<div id="event-error-message" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-3 rounded-md text-sm mb-4 flex items-center"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-alert-triangle mr-2"><path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>${eventFormError}</div>`;
+            }
+
+            container.innerHTML = `
+                <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div class="bg-white rounded-xl shadow-2xl p-6 md:p-8 w-full max-w-xl overflow-y-auto transform transition-all duration-300 ease-in-out scale-95 opacity-0 animate-modalEnter modal-content-area">
+                        <div class="flex justify-between items-center mb-6">
+                            <h2 class="text-2xl font-bold text-slate-800">
+                                ${isEditMode ? 'Edit Event Details' : 'Create New Event'}
+                            </h2>
+                            <button id="close-event-form-modal" class="text-slate-400 hover:text-slate-600 transition-colors">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-plus-circle transform rotate-45"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>
+                            </button>
+                        </div>
+                        ${errorHtml}
+                        <form id="event-form" class="space-y-5">
+                            <div>
+                                <label for="event-name" class="${commonLabelClass}">Event Name</label>
+                                <input type="text" id="event-name" placeholder="e.g., Team Meeting" class="${commonInputClass}" required value="${eventName}">
+                            </div>
+                            <div>
+                                <label for="event-description" class="${commonLabelClass}">Description (Optional)</label>
+                                <textarea id="event-description" placeholder="Details about the event" rows="3" class="${commonInputClass}">${eventDescription}</textarea>
+                            </div>
+                            
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div>
+                                    <label for="event-start-date" class="${commonLabelClass}">Start Date</label>
+                                    <input type="date" id="event-start-date" class="${commonInputClass}" required value="${startDate}">
+                                </div>
+                                <div>
+                                    <label for="event-start-time" class="${commonLabelClass}">Start Time (Optional)</label>
+                                    <input type="time" id="event-start-time" class="${commonInputClass}" value="${startTime}">
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div>
+                                    <label for="event-end-date" class="${commonLabelClass}">End Date (Optional)</label>
+                                    <input type="date" id="event-end-date" class="${commonInputClass}" min="${startDate}" value="${endDate}">
+                                </div>
+                                <div>
+                                    <label for="event-end-time" class="${commonLabelClass}">End Time (Optional)</label>
+                                    <input type="time" id="event-end-time" class="${commonInputClass}" value="${endTime}">
+                                </div>
+                            </div>
+
+                            <div>
+                                <label for="event-recurrence" class="${commonLabelClass}">Recurrence</label>
+                                <select id="event-recurrence" class="${commonInputClass}">
+                                    <option value="none" ${recurrence === 'none' ? 'selected' : ''}>None (Single Event)</option>
+                                    <option value="daily" ${recurrence === 'daily' ? 'selected' : ''}>Daily</option>
+                                    <option value="weekly" ${recurrence === 'weekly' ? 'selected' : ''}>Weekly</option>
+                                    <option value="monthly" ${recurrence === 'monthly' ? 'selected' : ''}>Monthly</option>
+                                    <option value="yearly" ${recurrence === 'yearly' ? 'selected' : ''}>Yearly</option>
+                                </select>
+                            </div>
+
+                            <div class="flex flex-col sm:flex-row justify-end space-y-3 sm:space-y-0 sm:space-x-3 pt-4">
+                                <button type="button" id="event-cancel-btn"
+                                    class="w-full sm:w-auto px-6 py-3 rounded-lg text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors"
+                                    ${eventFormIsLoading ? 'disabled' : ''}
+                                >
+                                    Cancel
+                                </button>
+                                <button type="submit" id="event-submit-btn"
+                                    class="w-full sm:w-auto px-6 py-3 rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors focus:ring-4 focus:ring-blue-300 flex items-center justify-center"
+                                    ${eventFormIsLoading ? 'disabled' : ''}
+                                >
+                                    ${eventFormIsLoading ?
+                                        `<div class="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>Processing...` :
+                                        (isEditMode ? 'Save Changes' : 'Create Event')}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            `;
+
+            // Attach event listeners
+            container.querySelector('#close-event-form-modal').onclick = () => {
+                showEventFormModal = false;
+                renderApp();
+            };
+            container.querySelector('#event-cancel-btn').onclick = () => {
+                showEventFormModal = false;
+                renderApp();
+            };
+            const eventNameInput = container.querySelector('#event-name');
+            const eventErrorMessage = container.querySelector('#event-error-message');
+
+            if (eventNameInput) {
+                eventNameInput.oninput = () => {
+                    // Hide the error message directly if the user starts typing
+                    if (eventErrorMessage) {
+                        eventErrorMessage.classList.add('hidden');
+                    }
+                };
+            }
+
+            container.querySelector('#event-form').onsubmit = async (e) => {
+                e.preventDefault();
+                eventFormIsLoading = true;
+                // Re-render to show loading state (if not already showing) and clear the error message if user has typed something
+                if (eventNameInput && eventErrorMessage && eventNameInput.value.trim() !== '') {
+                    eventFormError = ''; // Clear the error state if the user has provided valid input
+                    eventErrorMessage.classList.add('hidden'); // Hide the message immediately
+                }
+                renderApp();
+
+                const name = eventNameInput.value.trim();
+                const description = container.querySelector('#event-description').value;
+                const sDate = container.querySelector('#event-start-date').value;
+                const sTime = container.querySelector('#event-start-time').value;
+                const eDate = container.querySelector('#event-end-date').value;
+                const eTime = container.querySelector('#event-end-time').value;
+                const rec = container.querySelector('#event-recurrence').value;
+
+                if (!name) {
+                    eventFormError = "Event name is required.";
+                    eventFormIsLoading = false;
+                    renderApp(); // Re-render to show the error message
+                    return;
+                }
+                if (!sDate) {
+                    eventFormError = "Start date is required.";
+                    eventFormIsLoading = false;
+                    renderApp(); // Re-render to show the error message
+                    return;
+                }
+
+                const eventData = {
+                    name: name,
+                    description: description,
+                    startDate: sDate,
+                    startTime: sTime,
+                    endDate: eDate || sDate,
+                    endTime: eTime,
+                    recurrence: rec,
+                    updatedAt: new Date().toISOString(),
+                    isCompleted: false, // New field for completion status
+                };
+
+                console.log("Attempting to save event for user UID:", currentUser?.uid); // Debugging log
+                console.log("Event data being sent:", eventData); // Debugging log
+
+                try {
+                    const userIdToUse = currentUser?.uid; // currentUser.uid will be set by auth listener
+                    const eventCollectionRef = collection(db, `artifacts/${appId}/users/${userIdToUse}/events`);
+
+                    if (isEditMode) {
+                        const eventDocRef = doc(eventCollectionRef, selectedEvent.id);
+                        await updateDoc(eventDocRef, eventData);
+                        showNotification("Event updated successfully!", "success");
+                    } else {
+                        eventData.createdAt = new Date().toISOString();
+                        await addDoc(eventCollectionRef, eventData);
+                        showNotification("Event created successfully!", "success");
+                    }
+                    showEventFormModal = false; // Close modal on success
+                    navigateTo('landing'); // Navigate back to landing (calendar/list view)
+                } catch (err) {
+                    console.error("Error saving event:", err);
+                    eventFormError = `Failed to save event: ${err.message}. Ensure Firebase is configured and security rules allow writes.`;
+                    showNotification(`Failed to save event: ${err.message}`, 'error');
+                } finally {
+                    eventFormIsLoading = false;
+                    renderApp(); // Re-render to clear loading state and potentially show error
+                }
+            };
+            lucide.createIcons(); // Re-create icons for the new modal content
+        }
+
+        let eventDetailIsDeleting = false;
+
+        function renderEventDetail() {
+            if (!selectedEvent) {
+                appRoot.innerHTML = `<div class="p-6 text-center text-slate-600">Event not found. Please go back to the calendar.</div>`;
+                return;
+            }
+
+            const formattedStartDate = selectedEvent.startDate ? new Date(selectedEvent.startDate + "T00:00:00Z").toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'UTC' }) : 'N/A';
+            const formattedEndDate = selectedEvent.endDate && selectedEvent.endDate !== selectedEvent.startDate ? new Date(selectedEvent.endDate + "T00:00:00Z").toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'UTC' }) : null;
+
+            let endTimeDisplay = '';
+            if (!formattedEndDate && selectedEvent.endTime && selectedEvent.startDate) {
+                endTimeDisplay = `<p class="text-slate-600">Ends: ${new Date(selectedEvent.startDate + "T00:00:00Z").toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'UTC' })} at ${selectedEvent.endTime}</p>`;
+            } else if (formattedEndDate) {
+                endTimeDisplay = `<p class="text-slate-600">Ends: ${formattedEndDate} ${selectedEvent.endTime ? `at ${selectedEvent.endTime}` : ''}</p>`;
+            }
+
+            const statusText = selectedEvent.isCompleted ? 'Completed' : (new Date(selectedEvent.startDate + "T00:00:00Z") < new Date().setHours(0,0,0,0) ? 'Overdue' : 'Upcoming');
+            const statusColor = selectedEvent.isCompleted ? 'bg-green-200 text-green-800' : (new Date(selectedEvent.startDate + "T00:00:00Z") < new Date().setHours(0,0,0,0) ? 'bg-red-200 text-red-800' : 'bg-blue-200 text-blue-800');
+            const showMarkDone = !selectedEvent.isCompleted;
+
+
+            appRoot.innerHTML = `
+                <div class="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
+                    <div class="w-full max-w-2xl bg-white rounded-xl shadow-2xl p-6 md:p-8">
+                        <div class="flex justify-between items-center mb-2">
+                             <h2 class="text-3xl font-bold text-slate-800">${selectedEvent.name}</h2>
+                            <span class="text-sm font-medium px-3 py-1 rounded-full ${statusColor}">
+                                ${statusText}
+                            </span>
+                        </div>
+                        <p class="text-slate-500 mb-6 text-sm">Last updated: ${new Date(selectedEvent.updatedAt).toLocaleString()}</p>
+
+                        <div class="space-y-4 mb-8">
+                            <div>
+                                <h4 class="font-semibold text-slate-700">Description:</h4>
+                                <p class="text-slate-600 whitespace-pre-wrap">${selectedEvent.description || "No description provided."}</p>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-slate-700">Date & Time:</h4>
+                                <p class="text-slate-600">
+                                    Starts: ${formattedStartDate} ${selectedEvent.startTime ? `at ${selectedEvent.startTime}` : ''}
+                                </p>
+                                ${endTimeDisplay}
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-slate-700">Recurrence:</h4>
+                                <p class="text-slate-600 capitalize">${selectedEvent.recurrence || "None"}</p>
+                            </div>
+                        </div>
+
+                        <div class="flex flex-col sm:flex-row justify-end space-y-3 sm:space-y-0 sm:space-x-3">
+                            <button id="detail-back-btn"
+                                class="w-full sm:w-auto px-6 py-3 rounded-lg text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors"
+                            >
+                                Back to Calendar
+                            </button>
+                            <button id="detail-edit-btn"
+                                class="w-full sm:w-auto px-6 py-3 rounded-lg text-sm font-medium text-white bg-yellow-500 hover:bg-yellow-600 transition-colors flex items-center justify-center"
+                            >
+                               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-edit-3 mr-2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Edit Event
+                            </button>
+                            ${showMarkDone ? `
+                            <button id="detail-mark-done-btn"
+                                class="w-full sm:w-auto px-6 py-3 rounded-lg text-sm font-medium text-white bg-green-500 hover:bg-green-600 transition-colors flex items-center justify-center"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check-circle mr-2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg> Mark Done
+                            </button>
+                            ` : ''}
+                            <button id="detail-delete-btn"
+                                class="w-full sm:w-auto px-6 py-3 rounded-lg text-sm font-medium text-white bg-red-500 hover:bg-red-600 transition-colors flex items-center justify-center"
+                                ${eventDetailIsDeleting ? 'disabled' : ''}
+                            >
+                               ${eventDetailIsDeleting ?
+                                   `<div class="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>Deleting...` :
+                                   `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash-2 mr-2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg> Delete Event`}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('detail-back-btn').onclick = () => navigateTo('landing');
+            document.getElementById('detail-edit-btn').onclick = () => navigateTo('editEvent', selectedEvent);
+            if (document.getElementById('detail-mark-done-btn')) {
+                document.getElementById('detail-mark-done-btn').onclick = () => {
+                    showConfirmModal(
+                        "Mark as Done",
+                        `Are you sure you want to mark "${selectedEvent.name}" as done?`
+                        ,
+                        async () => {
+                            try {
+                                const userIdToUse = currentUser?.uid;
+                                const eventDocRef = doc(db, `artifacts/${appId}/users/${userIdToUse}/events`, selectedEvent.id);
+                                await updateDoc(eventDocRef, { isCompleted: true });
+                                showNotification("Event marked as done!", "success");
+                                navigateTo('landing'); // Go back to calendar after update
+                            } catch (error) {
+                                console.error("Error marking event as done:", error);
+                                showNotification(`Failed to mark event as done: ${error.message}. Ensure Firebase is configured and security rules allow writes.`, 'error');
+                            }
+                        },
+                        () => { /* Cancelled */ },
+                        "Yes, Mark Done",
+                        "Cancel",
+                        "bg-green-600 hover:bg-green-700"
+                    );
+                };
+            }
+            document.getElementById('detail-delete-btn').onclick = () => {
+                showConfirmModal(
+                    "Confirm Deletion",
+                    `Are you sure you want to delete the event "${selectedEvent.name}"? This action cannot be undone.`
+                    ,
+                    async () => {
+                        eventDetailIsDeleting = true;
+                        renderApp(); // Show loading state
+                        try {
+                            const userIdToUse = currentUser?.uid;
+                            const eventDocRef = doc(db, `artifacts/${appId}/users/${userIdToUse}/events`, selectedEvent.id);
+                            await deleteDoc(eventDocRef);
+                            showNotification("Event deleted successfully!", "success");
+                            navigateTo('landing');
+                        } catch (error) {
+                            console.error("Error deleting event:", error);
+                            showNotification(`Failed to delete event: ${error.message}. Ensure Firebase is configured and security rules allow writes.`, 'error');
+                            eventDetailIsDeleting = false;
+                            renderApp(); // Re-render to clear loading state
+                        }
+                    },
+                    () => { /* Cancelled */ },
+                    "Delete",
+                    "Cancel",
+                    "bg-red-600 hover:bg-red-700"
+                );
+            };
+            lucide.createIcons(); // Re-create icons for the new content
+        }
+
+        let taskFormIsLoading = false;
+        let taskFormError = '';
+
+        const predefinedTaskTypes = [
+            'Payment',
+            'Medication',
+            'Groceries',
+            'Workout',
+            'Meeting',
+            'Other' // Always last
+        ];
+
+        // Renamed to renderTaskFormModal
+        function renderTaskFormModal() {
+            const container = taskFormModalContainer;
+            if (!showTaskFormModal) {
+                container.innerHTML = ''; // Clear modal content if not visible
+                return;
+            }
+
+            const isEditMode = isEditingTask;
+            const initialStartDate = selectedTask?.startDate || dateForNewEntry || new Date().toISOString().split('T')[0];
+
+            const taskName = isEditMode ? selectedTask.name : '';
+            const taskDescription = isEditMode ? selectedTask.description : '';
+            const startDate = isEditMode ? selectedTask.startDate : initialStartDate;
+            const startTime = isEditMode ? selectedTask.startTime : '09:00';
+            const endDate = isEditMode ? selectedTask.endDate : '';
+            const endTime = isEditMode ? selectedTask.endTime : '';
+            const recurrence = isEditMode ? selectedTask.recurrence : 'none';
+            const taskType = isEditMode ? selectedTask.type : predefinedTaskTypes[0]; // Default to first type, 'Payment'
+            // Determine if the current taskType is one of the predefined ones or a custom 'Other'
+            const isCustomType = taskType && !predefinedTaskTypes.includes(taskType);
+            const selectedTaskTypeOption = isCustomType ? 'Other' : taskType;
+            const customTaskTypeInputVal = isCustomType ? taskType : '';
+
+
+            let errorHtml = '';
+            if (taskFormError) {
+                errorHtml = `<div id="task-error-message" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-3 rounded-md text-sm mb-4 flex items-center"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-alert-triangle mr-2"><path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>${taskFormError}</div>`;
+            }
+
+            container.innerHTML = `
+                <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div class="bg-white rounded-xl shadow-2xl p-6 md:p-8 w-full max-w-xl overflow-y-auto transform transition-all duration-300 ease-in-out scale-95 opacity-0 animate-modalEnter modal-content-area">
+                        <div class="flex justify-between items-center mb-6">
+                            <h2 class="text-2xl font-bold text-slate-800">
+                                ${isEditMode ? 'Edit Task Details' : 'Create New Task'}
+                            </h2>
+                            <button id="close-task-form-modal" class="text-slate-400 hover:text-slate-600 transition-colors">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-plus-circle transform rotate-45"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>
+                            </button>
+                        </div>
+                        ${errorHtml}
+                        <form id="task-form" class="space-y-5">
+                            <div>
+                                <label for="task-name" class="${commonLabelClass}">Task Name</label>
+                                <input type="text" id="task-name" placeholder="e.g., Pay Mobile Bill" class="${commonInputClass}" required value="${taskName}">
+                            </div>
+                            <div>
+                                <label for="task-description" class="${commonLabelClass}">Description (Optional)</label>
+                                <textarea id="task-description" placeholder="Details about the task" rows="3" class="${commonInputClass}">${taskDescription}</textarea>
+                            </div>
+                            
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div>
+                                    <label for="task-start-date" class="${commonLabelClass}">Start Date</label>
+                                    <input type="date" id="task-start-date" class="${commonInputClass}" required value="${startDate}">
+                                </div>
+                                <div>
+                                    <label for="task-start-time" class="${commonLabelClass}">Start Time (Optional)</label>
+                                    <input type="time" id="task-start-time" class="${commonInputClass}" value="${startTime}">
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div>
+                                    <label for="task-end-date" class="${commonLabelClass}">End Date (Optional)</label>
+                                    <input type="date" id="task-end-date" class="${commonInputClass}" min="${startDate}" value="${endDate}">
+                                </div>
+                                <div>
+                                    <label for="task-end-time" class="${commonLabelClass}">End Time (Optional)</label>
+                                    <input type="time" id="task-end-time" class="${commonInputClass}" value="${endTime}">
+                                </div>
+                            </div>
+
+                            <div>
+                                <label for="task-recurrence" class="${commonLabelClass}">Recurrence</label>
+                                <select id="task-recurrence" class="${commonInputClass}">
+                                    <option value="none" ${recurrence === 'none' ? 'selected' : ''}>None (Single Task)</option>
+                                    <option value="daily" ${recurrence === 'daily' ? 'selected' : ''}>Daily</option>
+                                    <option value="weekly" ${recurrence === 'weekly' ? 'selected' : ''}>Weekly</option>
+                                    <option value="monthly" ${recurrence === 'monthly' ? 'selected' : ''}>Monthly</option>
+                                    <option value="yearly" ${recurrence === 'yearly' ? 'selected' : ''}>Yearly</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label for="task-type" class="${commonLabelClass}">Task Type</label>
+                                <select id="task-type" class="${commonInputClass}">
+                                    ${predefinedTaskTypes.map(type => `
+                                        <option value="${type}" ${selectedTaskTypeOption === type ? 'selected' : ''}>${type}</option>
+                                    `).join('')}
+                                </select>
+                            </div>
+                            <div id="custom-task-type-div" class="${isCustomType ? '' : 'hidden'}">
+                                <label for="custom-task-type" class="${commonLabelClass}">Specify Other Task Type</label>
+                                <input type="text" id="custom-task-type" placeholder="e.g., Groceries, Project Report" class="${commonInputClass}" value="${customTaskTypeInputVal}">
+                            </div>
+
+                            <div class="flex flex-col sm:flex-row justify-end space-y-3 sm:space-y-0 sm:space-x-3 pt-4">
+                                <button type="button" id="task-cancel-btn"
+                                    class="w-full sm:w-auto px-6 py-3 rounded-lg text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors"
+                                    ${taskFormIsLoading ? 'disabled' : ''}
+                                >
+                                    Cancel
+                                </button>
+                                <button type="submit" id="task-submit-btn"
+                                    class="w-full sm:w-auto px-6 py-3 rounded-lg text-sm font-medium text-white bg-green-600 hover:bg-green-700 transition-colors focus:ring-4 focus:ring-green-300 flex items-center justify-center"
+                                    ${taskFormIsLoading ? 'disabled' : ''}
+                                >
+                                    ${taskFormIsLoading ?
+                                        `<div class="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>Processing...` :
+                                        (isEditMode ? 'Save Changes' : 'Create Task')}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            `;
+            // Attach event listeners
+            container.querySelector('#close-task-form-modal').onclick = () => {
+                showTaskFormModal = false;
+                renderApp();
+            };
+            container.querySelector('#task-cancel-btn').onclick = () => {
+                showTaskFormModal = false;
+                renderApp();
+            };
+            const taskTypeSelect = container.querySelector('#task-type');
+            const customTaskTypeDiv = container.querySelector('#custom-task-type-div');
+            const customTaskTypeInput = container.querySelector('#custom-task-type');
+            const taskNameInput = container.querySelector('#task-name');
+            const taskErrorMessage = container.querySelector('#task-error-message');
+
+
+            taskTypeSelect.onchange = () => {
+                if (taskTypeSelect.value === 'Other') {
+                    customTaskTypeDiv.classList.remove('hidden');
+                    customTaskTypeInput.setAttribute('required', 'true');
+                } else {
+                    customTaskTypeDiv.classList.add('hidden');
+                    customTaskTypeInput.removeAttribute('required');
+                    customTaskTypeInput.value = ''; // Clear custom input when not "Other"
+                }
+            };
+            taskTypeSelect.dispatchEvent(new Event('change')); // Trigger onchange once for initial state
+
+            if (taskNameInput) {
+                taskNameInput.oninput = () => {
+                    // Hide the error message directly if the user starts typing
+                    if (taskErrorMessage) {
+                        taskErrorMessage.classList.add('hidden');
+                    }
+                };
+            }
+
+            container.querySelector('#task-form').onsubmit = async (e) => {
+                e.preventDefault();
+                taskFormError = '';
+                taskFormIsLoading = true;
+                // Re-render to show loading state (if not already showing) and clear the error message if user has typed something
+                if (taskNameInput && taskErrorMessage && taskNameInput.value.trim() !== '') {
+                    taskFormError = ''; // Clear the error state if the user has provided valid input
+                    taskErrorMessage.classList.add('hidden'); // Hide the message immediately
+                }
+                renderApp();
+
+                const name = taskNameInput.value.trim();
+                const description = container.querySelector('#task-description').value;
+                const sDate = container.querySelector('#task-start-date').value;
+                const sTime = container.querySelector('#task-start-time').value;
+                const eDate = container.querySelector('#task-end-date').value;
+                const eTime = container.querySelector('#task-end-time').value;
+                const rec = container.querySelector('#task-recurrence').value;
+                let type = taskTypeSelect.value;
+                if (type === 'Other') {
+                    type = customTaskTypeInput.value.trim();
+                    if (!type) {
+                        taskFormError = "Please specify the custom task type.";
+                        taskFormIsLoading = false;
+                        renderApp();
+                        return;
+                    }
+                }
+
+                if (!name) {
+                    taskFormError = "Task name is required.";
+                    taskFormIsLoading = false;
+                    renderApp();
+                    return;
+                }
+                if (!sDate) {
+                    taskFormError = "Start date is required.";
+                    taskFormIsLoading = false;
+                    renderApp();
+                    return;
+                }
+
+                const taskData = {
+                    name: name,
+                    description: description,
+                    startDate: sDate,
+                    startTime: sTime,
+                    endDate: eDate || sDate,
+                    endTime: eTime,
+                    recurrence: rec,
+                    type: type,
+                    updatedAt: new Date().toISOString(),
+                    isCompleted: false, // New field for completion status
+                };
+
+                console.log("Attempting to save task for user UID:", currentUser?.uid); // Debugging log
+                console.log("Task data being sent:", taskData); // Debugging log
+
+                try {
+                    const userIdToUse = currentUser?.uid; // currentUser.uid will be set by auth listener
+                    const taskCollectionRef = collection(db, `artifacts/${appId}/users/${userIdToUse}/tasks`);
+
+                    if (isEditMode) {
+                        const taskDocRef = doc(taskCollectionRef, selectedTask.id);
+                        await updateDoc(taskDocRef, taskData);
+                        showNotification("Task updated successfully!", "success");
+                    } else {
+                        taskData.createdAt = new Date().toISOString();
+                        await addDoc(taskCollectionRef, taskData);
+                        showNotification("Task created successfully!", "success");
+                    }
+                    showTaskFormModal = false; // Close modal on success
+                    navigateTo('landing');
+                } catch (err) {
+                    console.error("Error saving task:", err);
+                    taskFormError = `Failed to save task: ${err.message}. Ensure Firebase is configured and security rules allow writes.`;
+                    showNotification(`Failed to save task: ${err.message}`, 'error');
+                } finally {
+                    taskFormIsLoading = false;
+                    renderApp();
+                }
+            };
+            lucide.createIcons(); // Re-create icons for the new modal content
+        }
+
+        let taskDetailIsDeleting = false;
+
+        function renderTaskDetail() {
+            if (!selectedTask) {
+                appRoot.innerHTML = `<div class="p-6 text-center text-slate-600">Task not found. Please go back to the calendar.</div>`;
+                return;
+            }
+
+            const formattedStartDate = selectedTask.startDate ? new Date(selectedTask.startDate + "T00:00:00Z").toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'UTC' }) : 'N/A';
+            const formattedEndDate = selectedTask.endDate && selectedTask.endDate !== selectedTask.startDate ? new Date(selectedTask.endDate + "T00:00:00Z").toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'UTC' }) : null;
+
+            let endTimeDisplay = '';
+            if (!formattedEndDate && selectedTask.endTime && selectedTask.startDate) {
+                endTimeDisplay = `<p class="text-slate-600">Ends: ${new Date(selectedTask.startDate + "T00:00:00Z").toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'UTC' })} at ${selectedTask.endTime}</p>`;
+            } else if (formattedEndDate) {
+                endTimeDisplay = `<p class="text-slate-600">Ends: ${formattedEndDate} ${selectedTask.endTime ? `at ${selectedTask.endTime}` : ''}</p>`;
+            }
+
+            const statusText = selectedTask.isCompleted ? 'Completed' : (new Date(selectedTask.startDate + "T00:00:00Z") < new Date().setHours(0,0,0,0) ? 'Overdue' : 'Upcoming');
+            const statusColor = selectedTask.isCompleted ? 'bg-green-200 text-green-800' : (new Date(selectedTask.startDate + "T00:00:00Z") < new Date().setHours(0,0,0,0) ? 'bg-red-200 text-red-800' : 'bg-purple-200 text-purple-800');
+            const showMarkDone = !selectedTask.isCompleted;
+
+            appRoot.innerHTML = `
+                <div class="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
+                    <div class="w-full max-w-2xl bg-white rounded-xl shadow-2xl p-6 md:p-8">
+                        <div class="flex justify-between items-center mb-2">
+                             <h2 class="text-3xl font-bold text-slate-800">${selectedTask.name}</h2>
+                            <span class="text-sm font-medium px-3 py-1 rounded-full ${statusColor}">
+                                ${statusText}
+                            </span>
+                        </div>
+                        <p class="text-slate-500 mb-6 text-sm">Last updated: ${new Date(selectedTask.updatedAt).toLocaleString()}</p>
+
+                        <div class="space-y-4 mb-8">
+                            <div>
+                                <h4 class="font-semibold text-slate-700">Type:</h4>
+                                <p class="text-slate-600 capitalize">${selectedTask.type || "General"}</p>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-slate-700">Description:</h4>
+                                <p class="text-slate-600 whitespace-pre-wrap">${selectedTask.description || "No description provided."}</p>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-slate-700">Date & Time:</h4>
+                                <p class="text-slate-600">
+                                    Starts: ${formattedStartDate} ${selectedTask.startTime ? `at ${selectedTask.startTime}` : ''}
+                                </p>
+                                ${endTimeDisplay}
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-slate-700">Recurrence:</h4>
+                                <p class="text-slate-600 capitalize">${selectedTask.recurrence || "None"}</p>
+                            </div>
+                        </div>
+
+                        <div class="flex flex-col sm:flex-row justify-end space-y-3 sm:space-y-0 sm:space-x-3">
+                            <button id="detail-back-btn"
+                                class="w-full sm:w-auto px-6 py-3 rounded-lg text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors"
+                            >
+                                Back to Calendar
+                            </button>
+                            <button id="detail-edit-btn"
+                                class="w-full sm:w-auto px-6 py-3 rounded-lg text-sm font-medium text-white bg-yellow-500 hover:bg-yellow-600 transition-colors flex items-center justify-center"
+                            >
+                               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-edit-3 mr-2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Edit Task
+                            </button>
+                            ${showMarkDone ? `
+                            <button id="detail-mark-done-btn"
+                                class="w-full sm:w-auto px-6 py-3 rounded-lg text-sm font-medium text-white bg-green-500 hover:bg-green-600 transition-colors flex items-center justify-center"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check-circle mr-2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg> Mark Done
+                            </button>
+                            ` : ''}
+                            <button id="detail-delete-btn"
+                                class="w-full sm:w-auto px-6 py-3 rounded-lg text-sm font-medium text-white bg-red-500 hover:bg-red-600 transition-colors flex items-center justify-center"
+                                ${taskDetailIsDeleting ? 'disabled' : ''}
+                            >
+                               ${taskDetailIsDeleting ?
+                                   `<div class="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>Deleting...` :
+                                   `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash-2 mr-2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg> Delete Task`}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('detail-back-btn').onclick = () => navigateTo('landing');
+            document.getElementById('detail-edit-btn').onclick = () => navigateTo('editTask', selectedTask);
+            if (document.getElementById('detail-mark-done-btn')) {
+                document.getElementById('detail-mark-done-btn').onclick = () => {
+                    showConfirmModal(
+                        "Mark as Done",
+                        `Are you sure you want to mark "${selectedTask.name}" as done?`
+                        ,
+                        async () => {
+                            try {
+                                const userIdToUse = currentUser?.uid;
+                                const taskDocRef = doc(db, `artifacts/${appId}/users/${userIdToUse}/tasks`, selectedTask.id);
+                                await updateDoc(taskDocRef, { isCompleted: true });
+                                showNotification("Task marked as done!", "success");
+                                navigateTo('landing'); // Go back to calendar after update
+                            } catch (error) {
+                                console.error("Error marking task as done:", error);
+                                showNotification(`Failed to mark task as done: ${error.message}. Ensure Firebase is configured and security rules allow writes.`, 'error');
+                            }
+                        },
+                        () => { /* Cancelled */ },
+                        "Yes, Mark Done",
+                        "Cancel",
+                        "bg-green-600 hover:bg-green-700"
+                    );
+                };
+            }
+            document.getElementById('detail-delete-btn').onclick = () => {
+                showConfirmModal(
+                    "Confirm Deletion",
+                    `Are you sure you want to delete the task "${selectedTask.name}"? This action cannot be undone.`
+                    ,
+                    async () => {
+                        taskDetailIsDeleting = true;
+                        renderApp(); // Show loading state
+                        try {
+                            const userIdToUse = currentUser?.uid;
+                            const taskDocRef = doc(db, `artifacts/${appId}/users/${userIdToUse}/tasks`, selectedTask.id);
+                            await deleteDoc(taskDocRef);
+                            showNotification("Task deleted successfully!", "success");
+                            navigateTo('landing');
+                        } catch (error) {
+                            console.error("Error deleting task:", error);
+                            showNotification(`Failed to delete task: ${error.message}. Ensure Firebase is configured and security rules allow writes.`, 'error');
+                            taskDetailIsDeleting = false;
+                            renderApp(); // Re-render to clear loading state
+                        }
+                    },
+                    () => { /* Cancelled */ },
+                    "Delete",
+                    "Cancel",
+                    "bg-red-600 hover:bg-red-700"
+                );
+            };
+            lucide.createIcons(); // Re-create icons for the new content
+        }
+
+        // --- Main Render Function ---
+        function renderApp() {
+            // Display a warning if Firebase config is still using placeholder values or is missing
+            if (!firebaseConfig.apiKey || firebaseConfig.apiKey.includes("YOUR_API_KEY")) {
+                appRoot.innerHTML = `
+                    <div class="flex flex-col items-center justify-center min-h-screen bg-red-50 p-4 text-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-alert-triangle text-red-500 mb-4"><path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+                        <h1 class="text-2xl font-bold text-red-800 mb-2">Firebase Not Fully Configured!</h1>
+                        <p class="text-red-700 mb-4">You are currently in **Guest Mode** (login bypassed). Data persistence will not work unless you replace the placeholder values in the \`firebaseConfig\` object within the script tag and ensure Firebase security rules are correctly set up.</p>
+                        <p class="text-red-700 text-sm">You can find your config in Firebase Console > Project settings > Your apps > Web app. For guest mode persistence, ensure Firestore security rules allow writes for the ID 'unauthenticated_guest_fallback' or configure anonymous authentication.</p>
+                    </div>
+                `;
+                // If config is placeholder, bypass login and show warning, then render landing page
+                renderLandingPage();
+                return;
+            }
+
+
+            // If Firebase config is set, proceed with normal auth flow or render based on currentView
+            if (currentUser === null && currentView !== 'auth') {
+                 // If Firebase config is real and no user, show loading or redirect to auth
+                renderLoadingSpinner();
+                return;
+            }
+
+            switch (currentView) {
+                case 'auth':
+                    renderAuthScreen();
+                    break;
+                case 'landing':
+                    renderLandingPage();
+                    break;
+                case 'eventDetail':
+                    renderEventDetail();
+                    break;
+                case 'taskDetail':
+                    renderTaskDetail();
+                    break;
+                default:
+                    renderLoadingSpinner(); // Fallback
+            }
+
+            // Render modals if their state is true, regardless of currentView
+            if (showEventFormModal) {
+                renderEventFormModal();
+            } else {
+                eventFormModalContainer.innerHTML = ''; // Ensure container is empty when modal is closed
+            }
+            if (showTaskFormModal) {
+                renderTaskFormModal();
+            } else {
+                taskFormModalContainer.innerHTML = ''; // Ensure container is empty when modal is closed
+            }
+        }
+
+        // Initial render on window load
+        window.onload = () => {
+             // This is important for Lucide icons to render correctly after DOM is loaded
+            lucide.createIcons();
+            // The onAuthStateChanged listener handles the initial render based on auth state.
+            // It will now attempt anonymous login, or show explicit login if that fails.
+        };
+
+        // Re-create Lucide icons whenever the DOM is updated
+        const observer = new MutationObserver(() => {
+            lucide.createIcons();
+        });
+        observer.observe(appRoot, { childList: true, subtree: true });
+        observer.observe(eventFormModalContainer, { childList: true, subtree: true });
+        observer.observe(taskFormModalContainer, { childList: true, subtree: true });
+
+
+    </script>
+</body>
+</html>
