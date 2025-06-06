@@ -1,1 +1,1 @@
-# PersonalAssistant_Lovable
+# PersonalAssistant_Gemini
