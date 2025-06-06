@@ -136,9 +136,20 @@
             .sm\:w-auto {
                 width: 100%;
             }
-            /* Ensure modals take appropriate width on small screens */
+        }
+        /* Ensure modals take appropriate width on small screens and are centered */
+        .modal-content-area {
+             width: 100%; /* Take full width within parent padding */
+             max-width: 95%; /* Default max-width for very small screens */
+        }
+        @media (min-width: 640px) { /* sm breakpoint */
             .modal-content-area {
-                 max-width: 95%; /* Adjust as needed for smaller screens */
+                max-width: 28rem; /* Equivalent to max-w-md */
+            }
+        }
+        @media (min-width: 768px) { /* md breakpoint */
+            .modal-content-area {
+                max-width: 36rem; /* Equivalent to max-w-xl */
             }
         }
     </style>
@@ -252,8 +263,8 @@ const firebaseConfig = {
         // --- Global State ---
         let currentUser = null;
         let userProfile = { name: '', email: '', phone: '', photoURL: '' };
-        let userEvents = [];
-        let userTasks = []; // New state for tasks
+        let userEvents = []; // Stores original events from Firestore
+        let userTasks = []; // Stores original tasks from Firestore
         // Initial view will be 'auth' to show login screen
         let currentView = 'auth'; // 'auth', 'landing', 'eventDetail', 'taskDetail'
         let authScreen = 'login'; // 'login', 'register', 'forgotPassword' (only relevant if login is enabled)
@@ -325,7 +336,7 @@ const firebaseConfig = {
         function showConfirmModal(title, message, onConfirmCallback, onCancelCallback, confirmText = "Confirm", cancelText = "Cancel", confirmButtonClass = "bg-blue-600 hover:bg-blue-700") {
             confirmModalContainer.innerHTML = `
                 <div class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
-                    <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+                    <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md animate-modalEnter">
                         <h3 class="text-xl font-semibold text-slate-800 mb-4">${title}</h3>
                         <p class="text-slate-600 mb-6">${message}</p>
                         <div class="flex justify-end space-x-3">
@@ -367,6 +378,10 @@ const firebaseConfig = {
             showEventFormModal = false; // Close modals on navigation
             showTaskFormModal = false; // Close modals on navigation
 
+            // Reset deleting states when navigating away from detail views
+            eventDetailIsDeleting = false;
+            taskDetailIsDeleting = false;
+
             if (view === 'eventDetail') selectedEvent = data;
             if (view === 'taskDetail') selectedTask = data;
 
@@ -391,6 +406,7 @@ const firebaseConfig = {
                 isEditingTask = true;
                 selectedTask = data;
                 currentView = 'landing'; // Keep landing page visible underneath
+                console.log("Navigating to editTask. Selected task object:", selectedTask); // Diagnostic log
             }
             renderApp(); // Re-render the main app based on new view
         }
@@ -1036,7 +1052,7 @@ const firebaseConfig = {
         let dateForNewEntry = null;
 
         function daysInMonth(year, month) { return new Date(year, month + 1, 0).getDate(); }
-        function firstDayOfMonth(year, month) { return new Date(year, month, 1).getDay(); }
+        function firstDayOfMonth(year, month) { return new Date(year, month, 1).getDay(); } // 0 for Sunday, 1 for Monday, etc.
 
         function changeCalendarMonth(offset) {
             calendarCurrentDate = new Date(calendarCurrentDate.getFullYear(), calendarCurrentDate.getMonth() + offset, 1);
@@ -1087,7 +1103,7 @@ const firebaseConfig = {
 
         /**
          * Generates occurrences for recurring events/tasks within a given month.
-         * @param {Array} originalEntries - Array of original event/task objects.
+         * @param {Array} originalEntries - Array of original event/task objects from Firestore.
          * @param {string} type - 'event' or 'task'.
          * @param {number} targetYear - The year to generate occurrences for.
          * @param {number} targetMonth - The 0-indexed month to generate occurrences for.
@@ -1095,86 +1111,86 @@ const firebaseConfig = {
          */
         function generateOccurrencesForMonth(originalEntries, type, targetYear, targetMonth) {
             const occurrences = [];
-            const startOfMonth = new Date(targetYear, targetMonth, 1);
-            const endOfMonth = new Date(targetYear, targetMonth + 1, 0); // Last day of the month
+            const startOfMonth = new Date(Date.UTC(targetYear, targetMonth, 1));
+            const endOfMonth = new Date(Date.UTC(targetYear, targetMonth + 1, 0)); // Last day of the target month
 
             originalEntries.forEach(entry => {
-                // Always include the original entry if its start date is within or before the current month
-                const entryStartDate = new Date(entry.startDate + "T00:00:00");
-                const entryEndDate = entry.endDate ? new Date(entry.endDate + "T00:00:00") : null;
+                // Ensure date strings are parsed correctly as UTC to avoid timezone issues
+                const entryStartDate = new Date(entry.startDate + "T00:00:00Z");
+                const entryEndDate = entry.endDate ? new Date(entry.endDate + "T23:59:59Z") : null;
 
-                // Add original if it falls in or before the current month and is not recurring OR is recurring but should be added once
-                if (entry.recurrence === 'none' &&
-                    entryStartDate.getFullYear() === targetYear && entryStartDate.getMonth() === targetMonth) {
-                    occurrences.push({ ...entry, isOccurrence: false });
-                    return; // Skip recurrence generation for non-recurring events
+                // --- Handle non-recurring entries first ---
+                if (entry.recurrence === 'none') {
+                    // Check if the single event falls within the target month (inclusive of start and end) in UTC
+                    const singleEntryDateUTC = new Date(entry.startDate + "T00:00:00Z");
+                    if (singleEntryDateUTC.getUTCFullYear() === targetYear && singleEntryDateUTC.getUTCMonth() === targetMonth) {
+                        occurrences.push({ ...entry, isOccurrence: false });
+                    }
+                    return; // Done with this entry, move to next.
                 }
 
-                if (entry.recurrence === 'none') return; // Skip if non-recurring and not in target month
+                // --- Handle recurring entries ---
+                // Start with the original entry's start date, explicitly as UTC
+                let currentOccurrenceDate = new Date(entry.startDate + "T00:00:00Z");
 
-                // For recurring events, generate instances within the target month
-                let currentDate = new Date(entry.startDate + "T00:00:00");
-                // If the event started in a previous month, find the first occurrence in the target month
-                while (currentDate < startOfMonth) {
+                // Fast-forward currentOccurrenceDate to the first occurrence
+                // that is on or after the start of the target month AND not past its own end date.
+                while (currentOccurrenceDate < startOfMonth && (!entryEndDate || currentOccurrenceDate <= entryEndDate)) {
                     if (entry.recurrence === 'daily') {
-                        currentDate.setDate(currentDate.getDate() + 1);
+                        currentOccurrenceDate.setUTCDate(currentOccurrenceDate.getUTCDate() + 1);
                     } else if (entry.recurrence === 'weekly') {
-                        currentDate.setDate(currentDate.getDate() + 7);
+                        currentOccurrenceDate.setUTCDate(currentOccurrenceDate.getUTCDate() + 7);
                     } else if (entry.recurrence === 'monthly') {
-                        // Advance to next month, keeping the same day of the month.
-                        // Handle cases where day is greater than days in next month.
-                        const originalDay = currentDate.getDate();
-                        currentDate.setMonth(currentDate.getMonth() + 1);
-                        if (currentDate.getDate() !== originalDay) {
-                            currentDate.setDate(0); // Set to last day of previous month (i.e., current month)
+                        const originalUTCDay = currentOccurrenceDate.getUTCDate();
+                        currentOccurrenceDate.setUTCMonth(currentOccurrenceDate.getUTCMonth() + 1);
+                        // Handle month-end rollovers (e.g., Jan 31 -> Feb 28/29).
+                        if (currentOccurrenceDate.getUTCDate() !== originalUTCDay) {
+                             currentOccurrenceDate.setUTCDate(0); // Set to last day of previous month to get last day of new month
                         }
                     } else if (entry.recurrence === 'yearly') {
-                        currentDate.setFullYear(currentDate.getFullYear() + 1);
+                        currentOccurrenceDate.setUTCFullYear(currentOccurrenceDate.getUTCFullYear() + 1);
                     } else {
-                        break; // Unknown recurrence, stop
+                        break; // Unknown recurrence, stop fast-forwarding
                     }
                 }
 
-                // Generate occurrences until the end of the target month or entry's end date
-                while (currentDate <= endOfMonth) {
-                    // Check if recurring event has an end date and if current occurrence is past it
-                    if (entryEndDate && currentDate > entryEndDate) {
-                        break;
-                    }
-
-                    // Only add if it falls within the target month
-                    if (currentDate.getFullYear() === targetYear && currentDate.getMonth() === targetMonth) {
+                // Add occurrences that fall within the target month (inclusive) and are not past the end date
+                while (currentOccurrenceDate <= endOfMonth && (!entryEndDate || currentOccurrenceDate <= entryEndDate)) {
+                    // Only add if it falls within the target month (actual month and year in UTC)
+                    if (currentOccurrenceDate.getUTCFullYear() === targetYear && currentOccurrenceDate.getUTCMonth() === targetMonth) {
                         const newOccurrence = {
                             ...entry,
-                            id: `${entry.id}-${currentDate.toISOString().split('T')[0]}`, // Unique ID for occurrence
-                            startDate: currentDate.toISOString().split('T')[0],
+                            // Create a unique ID for each occurrence to distinguish from original
+                            id: `${entry.id}_${currentOccurrenceDate.toISOString().split('T')[0]}`,
+                            startDate: currentOccurrenceDate.toISOString().split('T')[0], //YYYY-MM-DD format (UTC)
                             isOccurrence: true, // Mark as generated occurrence
-                            originalId: entry.id, // Reference to original event
-                            originalStartDate: entry.startDate // Store original start date for reference
+                            originalId: entry.id, // Reference to original event (Firestore ID)
+                            originalStartDate: entry.startDate // Store original event's start date
                         };
                         occurrences.push(newOccurrence);
                     }
 
-                    // Advance to the next occurrence
+                    // Move to the next recurrence
                     if (entry.recurrence === 'daily') {
-                        currentDate.setDate(currentDate.getDate() + 1);
+                        currentOccurrenceDate.setUTCDate(currentOccurrenceDate.getUTCDate() + 1);
                     } else if (entry.recurrence === 'weekly') {
-                        currentDate.setDate(currentDate.getDate() + 7);
+                        currentOccurrenceDate.setUTCDate(currentOccurrenceDate.getUTCDate() + 7);
                     } else if (entry.recurrence === 'monthly') {
-                        const originalDay = currentDate.getDate();
-                        currentDate.setMonth(currentDate.getMonth() + 1);
-                        if (currentDate.getDate() !== originalDay) {
-                            currentDate.setDate(0); // Set to last day of previous month (i.e., current month)
+                        const originalUTCDay = currentOccurrenceDate.getUTCDate();
+                        currentOccurrenceDate.setUTCMonth(currentOccurrenceDate.getUTCMonth() + 1);
+                        if (currentOccurrenceDate.getUTCDate() !== originalUTCDay) {
+                            currentOccurrenceDate.setUTCDate(0);
                         }
                     } else if (entry.recurrence === 'yearly') {
-                        currentDate.setFullYear(currentDate.getFullYear() + 1);
+                        currentOccurrenceDate.setUTCFullYear(currentOccurrenceDate.getUTCFullYear() + 1);
                     } else {
-                        break; // Should not happen for valid recurrences
+                        break;
                     }
                 }
             });
             return occurrences;
         }
+
 
         function renderCalendarView() {
             const calendarContainer = document.getElementById('calendar-view-container');
@@ -1184,8 +1200,10 @@ const firebaseConfig = {
             const month = calendarCurrentDate.getMonth();
             const numDays = daysInMonth(year, month);
             const firstDay = firstDayOfMonth(year, month); // 0 for Sunday, 1 for Monday, etc.
+            
+            // Get today's date in UTC for consistent comparison
             const today = new Date();
-            today.setHours(0,0,0,0);
+            const todayUTC = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
 
             // Generate occurrences for the current month
             const allEvents = generateOccurrencesForMonth(userEvents, 'event', year, month);
@@ -1197,12 +1215,13 @@ const firebaseConfig = {
             }
 
             for (let day = 1; day <= numDays; day++) {
-                const dayDate = new Date(year, month, day);
+                // Create dayDate as UTC for consistent comparison with entry dates
+                const dayDateUTC = new Date(Date.UTC(year, month, day));
                 const dayDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                 
                 const eventsOnThisDay = allEvents.filter(event => event.startDate && event.startDate.startsWith(dayDateStr));
                 const tasksOnThisDay = allTasks.filter(task => task.startDate && task.startDate.startsWith(dayDateStr));
-                const isToday = dayDate.getTime() === today.getTime();
+                const isToday = dayDateUTC.getTime() === todayUTC.getTime(); // Compare UTC times
 
                 // Sort events and tasks by time for consistent display
                 eventsOnThisDay.sort((a,b) => (a.startTime || '00:00').localeCompare(b.startTime || '00:00'));
@@ -1292,6 +1311,7 @@ const firebaseConfig = {
                                 <p class="text-xs text-slate-500">
                                     ${event.startTime} ${event.endTime ? ` - ${event.endTime}` : ''}
                                 </p>
+                                ${event.isOccurrence ? `<span class="text-xs text-slate-500 italic"> (Recurring)</span>` : ''}
                             </li>
                         `;
                     });
@@ -1309,6 +1329,7 @@ const firebaseConfig = {
                                 <p class="text-xs text-slate-500">
                                     ${task.startTime} ${task.endTime ? ` - ${task.endTime}` : ''}
                                 </p>
+                                ${task.isOccurrence ? `<span class="text-xs text-slate-500 italic"> (Recurring)</span>` : ''}
                             </li>
                         `;
                     });
@@ -1321,7 +1342,7 @@ const firebaseConfig = {
 
             const modalHtml = `
                 <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                    <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md md:max-w-lg animate-modalEnter">
+                    <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md md:max-w-lg animate-modalEnter modal-content-area">
                         <div class="flex justify-between items-center mb-4">
                             <h3 class="text-xl font-semibold text-slate-800">Details for ${formattedDate}</h3>
                             <button id="close-day-details-modal" class="text-slate-400 hover:text-slate-600">
@@ -1362,15 +1383,16 @@ const firebaseConfig = {
                 modalElement.remove();
             };
 
-            modalElement.querySelectorAll('[data-id]').forEach(itemLi => {
+            modalElement.querySelectorAll('[data-original-id]').forEach(itemLi => {
                 itemLi.onclick = () => {
-                    const id = itemLi.dataset.originalId || itemLi.dataset.id; // Use originalId for recurring
+                    // When clicking a recurring occurrence, navigate to the original event's detail page
+                    const originalId = itemLi.dataset.originalId;
                     const type = itemLi.dataset.type;
                     if (type === 'event') {
-                        const entry = userEvents.find(e => e.id === id);
+                        const entry = userEvents.find(e => e.id === originalId);
                         navigateTo('eventDetail', entry);
                     } else if (type === 'task') {
-                        const entry = userTasks.find(t => t.id === id);
+                        const entry = userTasks.find(t => t.id === originalId);
                         navigateTo('taskDetail', entry);
                     }
                     showDayDetailsModal = false;
@@ -1386,7 +1408,8 @@ const firebaseConfig = {
             if (!listContainer) return;
 
             const now = new Date();
-            now.setHours(0, 0, 0, 0); // Normalize to start of day
+            // Get today's date in UTC for consistent comparison
+            const nowUTC = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())); 
 
             // Generate occurrences for the current month
             const year = calendarCurrentDate.getFullYear();
@@ -1409,9 +1432,11 @@ const firebaseConfig = {
 
             // Function to generate HTML for a single entry (event or task)
             const generateEntryHtml = (entry, type) => {
-                const entryDate = new Date(entry.startDate + "T00:00:00");
+                // Ensure entryDate is created as UTC for comparison
+                const entryDateUTC = new Date(entry.startDate + "T00:00:00Z");
                 const formattedTime = entry.startTime ? ` at ${entry.startTime}` : '';
-                const formattedDate = entryDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                // Format for display using local timezone for user readability
+                const formattedDate = entryDateUTC.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 
                 let statusClass = 'text-blue-700 bg-blue-50 border-blue-200'; // Upcoming (default)
                 let statusText = 'Upcoming';
@@ -1421,11 +1446,11 @@ const firebaseConfig = {
                 if (entry.isCompleted) {
                     statusClass = 'text-green-700 bg-green-50 border-green-200';
                     statusText = 'Completed';
-                } else if (entryDate < now) {
+                } else if (entryDateUTC < nowUTC) { // Compare UTC dates
                     statusClass = 'text-red-700 bg-red-50 border-red-200';
                     statusText = 'Overdue';
                     showMarkDone = true;
-                } else if (entryDate.getTime() === now.getTime()) {
+                } else if (entryDateUTC.getTime() === nowUTC.getTime()) { // Compare UTC times
                     isBold = true;
                     statusText = 'Today';
                     showMarkDone = true;
@@ -1444,7 +1469,7 @@ const firebaseConfig = {
                     <li class="p-4 rounded-lg shadow-sm cursor-pointer ${statusClass}" data-id="${entry.id}" data-type="${type}" data-original-id="${entry.originalId || entry.id}">
                         <div class="flex justify-between items-center mb-2">
                             <h4 class="font-semibold ${isBold ? 'text-lg md:text-xl font-bold' : 'text-base md:text-lg'}">${entry.name}</h4>
-                            <span class="text-xs font-medium px-2 py-0.5 rounded-full ${entry.isCompleted ? 'bg-green-200 text-green-800' : (entryDate < now && !entry.isCompleted ? 'bg-red-200 text-red-800' : 'bg-blue-200 text-blue-800')}">
+                            <span class="text-xs font-medium px-2 py-0.5 rounded-full ${entry.isCompleted ? 'bg-green-200 text-green-800' : (entryDateUTC < nowUTC && !entry.isCompleted ? 'bg-red-200 text-red-800' : 'bg-blue-200 text-blue-800')}">
                                 ${statusText}
                             </span>
                         </div>
@@ -1556,6 +1581,7 @@ const firebaseConfig = {
 
             const eventName = isEditMode ? selectedEvent.name : '';
             const eventDescription = isEditMode ? selectedEvent.description : '';
+            const eventAdditionalInfo = isEditMode ? selectedEvent.additionalInfo : ''; // New field
             const startDate = isEditMode ? selectedEvent.startDate : initialStartDate;
             const startTime = isEditMode ? selectedEvent.startTime : '09:00';
             const endDate = isEditMode ? selectedEvent.endDate : '';
@@ -1569,7 +1595,7 @@ const firebaseConfig = {
 
             container.innerHTML = `
                 <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                    <div class="bg-white rounded-xl shadow-2xl p-6 md:p-8 w-full max-w-xl overflow-y-auto transform transition-all duration-300 ease-in-out scale-95 opacity-0 animate-modalEnter modal-content-area">
+                    <div class="bg-white rounded-xl shadow-2xl p-6 md:p-8 w-full max-w-xl max-h-[90vh] overflow-y-auto transform transition-all duration-300 ease-in-out scale-95 opacity-0 animate-modalEnter modal-content-area">
                         <div class="flex justify-between items-center mb-6">
                             <h2 class="text-2xl font-bold text-slate-800">
                                 ${isEditMode ? 'Edit Event Details' : 'Create New Event'}
@@ -1587,6 +1613,10 @@ const firebaseConfig = {
                             <div>
                                 <label for="event-description" class="${commonLabelClass}">Description (Optional)</label>
                                 <textarea id="event-description" placeholder="Details about the event" rows="3" class="${commonInputClass}">${eventDescription}</textarea>
+                            </div>
+                            <div>
+                                <label for="event-additional-info" class="${commonLabelClass}">Additional Info (Optional)</label>
+                                <textarea id="event-additional-info" placeholder="Any extra notes or details" rows="2" class="${commonInputClass}">${eventAdditionalInfo}</textarea>
                             </div>
                             
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -1666,16 +1696,10 @@ const firebaseConfig = {
 
             container.querySelector('#event-form').onsubmit = async (e) => {
                 e.preventDefault();
-                eventFormIsLoading = true;
-                // Re-render to show loading state (if not already showing) and clear the error message if user has typed something
-                if (eventNameInput && eventErrorMessage && eventNameInput.value.trim() !== '') {
-                    eventFormError = ''; // Clear the error state if the user has provided valid input
-                    eventErrorMessage.classList.add('hidden'); // Hide the message immediately
-                }
-                renderApp();
-
-                const name = eventNameInput.value.trim();
+                // Capture all form values BEFORE setting loading state and re-rendering
+                const name = container.querySelector('#event-name').value.trim();
                 const description = container.querySelector('#event-description').value;
+                const additionalInfo = container.querySelector('#event-additional-info').value; // New field
                 const sDate = container.querySelector('#event-start-date').value;
                 const sTime = container.querySelector('#event-start-time').value;
                 const eDate = container.querySelector('#event-end-date').value;
@@ -1684,23 +1708,28 @@ const firebaseConfig = {
 
                 if (!name) {
                     eventFormError = "Event name is required.";
-                    eventFormIsLoading = false;
-                    renderApp(); // Re-render to show the error message
+                    eventFormIsLoading = false; // Ensure loading is off if validation fails immediately
+                    renderApp(); 
                     return;
                 }
                 if (!sDate) {
                     eventFormError = "Start date is required.";
-                    eventFormIsLoading = false;
-                    renderApp(); // Re-render to show the error message
+                    eventFormIsLoading = false; // Ensure loading is off if validation fails immediately
+                    renderApp(); 
                     return;
                 }
+
+                eventFormIsLoading = true; // Set loading state after validation
+                eventFormError = ''; // Clear previous errors
+                renderApp(); // Re-render to show loading state
 
                 const eventData = {
                     name: name,
                     description: description,
+                    additionalInfo: additionalInfo, // New field
                     startDate: sDate,
                     startTime: sTime,
-                    endDate: eDate || sDate,
+                    endDate: eDate, 
                     endTime: eTime,
                     recurrence: rec,
                     updatedAt: new Date().toISOString(),
@@ -1755,8 +1784,13 @@ const firebaseConfig = {
                 endTimeDisplay = `<p class="text-slate-600">Ends: ${formattedEndDate} ${selectedEvent.endTime ? `at ${selectedEvent.endTime}` : ''}</p>`;
             }
 
-            const statusText = selectedEvent.isCompleted ? 'Completed' : (new Date(selectedEvent.startDate + "T00:00:00Z") < new Date().setHours(0,0,0,0) ? 'Overdue' : 'Upcoming');
-            const statusColor = selectedEvent.isCompleted ? 'bg-green-200 text-green-800' : (new Date(selectedEvent.startDate + "T00:00:00Z") < new Date().setHours(0,0,0,0) ? 'bg-red-200 text-red-800' : 'bg-blue-200 text-blue-800');
+            // Get today's date in UTC for consistent comparison
+            const todayUTC = new Date(Date.UTC(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()));
+            // Get event's start date in UTC for comparison
+            const eventStartUTC = new Date(selectedEvent.startDate + "T00:00:00Z");
+
+            const statusText = selectedEvent.isCompleted ? 'Completed' : (eventStartUTC < todayUTC ? 'Overdue' : 'Upcoming');
+            const statusColor = selectedEvent.isCompleted ? 'bg-green-200 text-green-800' : (eventStartUTC < todayUTC ? 'bg-red-200 text-red-800' : 'bg-blue-200 text-blue-800');
             const showMarkDone = !selectedEvent.isCompleted;
 
 
@@ -1776,6 +1810,12 @@ const firebaseConfig = {
                                 <h4 class="font-semibold text-slate-700">Description:</h4>
                                 <p class="text-slate-600 whitespace-pre-wrap">${selectedEvent.description || "No description provided."}</p>
                             </div>
+                            ${selectedEvent.additionalInfo ? `
+                            <div>
+                                <h4 class="font-semibold text-slate-700">Additional Info:</h4>
+                                <p class="text-slate-600 whitespace-pre-wrap">${selectedEvent.additionalInfo}</p>
+                            </div>
+                            ` : ''}
                             <div>
                                 <h4 class="font-semibold text-slate-700">Date & Time:</h4>
                                 <p class="text-slate-600">
@@ -1863,9 +1903,11 @@ const firebaseConfig = {
                             navigateTo('landing');
                         } catch (error) {
                             console.error("Error deleting event:", error);
-                            showNotification(`Failed to delete event: ${error.message}. Ensure Firebase is configured and security rules allow writes.`, 'error');
+                            showNotification(`Failed to delete event: ${err.message}. Ensure Firebase is configured and security rules allow writes.`, 'error');
+                        } finally {
+                            // Ensure the deleting flag is reset regardless of success or failure
                             eventDetailIsDeleting = false;
-                            renderApp(); // Re-render to clear loading state
+                            renderApp(); // Re-render to clear loading state and re-enable buttons
                         }
                     },
                     () => { /* Cancelled */ },
@@ -1902,6 +1944,7 @@ const firebaseConfig = {
 
             const taskName = isEditMode ? selectedTask.name : '';
             const taskDescription = isEditMode ? selectedTask.description : '';
+            const taskAdditionalInfo = isEditMode ? selectedTask.additionalInfo : ''; // New field
             const startDate = isEditMode ? selectedTask.startDate : initialStartDate;
             const startTime = isEditMode ? selectedTask.startTime : '09:00';
             const endDate = isEditMode ? selectedTask.endDate : '';
@@ -1913,6 +1956,11 @@ const firebaseConfig = {
             const selectedTaskTypeOption = isCustomType ? 'Other' : taskType;
             const customTaskTypeInputVal = isCustomType ? taskType : '';
 
+            console.log('Rendering task form:');
+            console.log('  isEditMode:', isEditMode);
+            console.log('  selectedTask (if edit mode):', selectedTask);
+            console.log('  Recurrence initial value (from state):', recurrence);
+
 
             let errorHtml = '';
             if (taskFormError) {
@@ -1921,7 +1969,7 @@ const firebaseConfig = {
 
             container.innerHTML = `
                 <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                    <div class="bg-white rounded-xl shadow-2xl p-6 md:p-8 w-full max-w-xl overflow-y-auto transform transition-all duration-300 ease-in-out scale-95 opacity-0 animate-modalEnter modal-content-area">
+                    <div class="bg-white rounded-xl shadow-2xl p-6 md:p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto transform transition-all duration-300 ease-in-out scale-95 opacity-0 animate-modalEnter modal-content-area">
                         <div class="flex justify-between items-center mb-6">
                             <h2 class="text-2xl font-bold text-slate-800">
                                 ${isEditMode ? 'Edit Task Details' : 'Create New Task'}
@@ -1937,8 +1985,34 @@ const firebaseConfig = {
                                 <input type="text" id="task-name" placeholder="e.g., Pay Mobile Bill" class="${commonInputClass}" required value="${taskName}">
                             </div>
                             <div>
+                                <label for="task-type" class="${commonLabelClass}">Task Type</label>
+                                <select id="task-type" class="${commonInputClass}">
+                                    ${predefinedTaskTypes.map(type => `
+                                        <option value="${type}" ${selectedTaskTypeOption === type ? 'selected' : ''}>${type}</option>
+                                    `).join('')}
+                                </select>
+                            </div>
+                            <div id="custom-task-type-div" class="${isCustomType ? '' : 'hidden'}">
+                                <label for="custom-task-type" class="${commonLabelClass}">Specify Other Task Type</label>
+                                <input type="text" id="custom-task-type" placeholder="e.g., Groceries, Project Report" class="${commonInputClass}" value="${customTaskTypeInputVal}">
+                            </div>
+                            <div>
                                 <label for="task-description" class="${commonLabelClass}">Description (Optional)</label>
                                 <textarea id="task-description" placeholder="Details about the task" rows="3" class="${commonInputClass}">${taskDescription}</textarea>
+                            </div>
+                            <div>
+                                <label for="task-additional-info" class="${commonLabelClass}">Additional Info (Optional)</label>
+                                <textarea id="task-additional-info" placeholder="Any extra notes or details" rows="2" class="${commonInputClass}">${taskAdditionalInfo}</textarea>
+                            </div>
+                            <div>
+                                <label for="task-recurrence" class="${commonLabelClass}">Recurrence</label>
+                                <select id="task-recurrence" class="${commonInputClass}">
+                                    <option value="none" ${recurrence === 'none' ? 'selected' : ''}>None (Single Task)</option>
+                                    <option value="daily" ${recurrence === 'daily' ? 'selected' : ''}>Daily</option>
+                                    <option value="weekly" ${recurrence === 'weekly' ? 'selected' : ''}>Weekly</option>
+                                    <option value="monthly" ${recurrence === 'monthly' ? 'selected' : ''}>Monthly</option>
+                                    <option value="yearly" ${recurrence === 'yearly' ? 'selected' : ''}>Yearly</option>
+                                </select>
                             </div>
                             
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -1961,30 +2035,6 @@ const firebaseConfig = {
                                     <label for="task-end-time" class="${commonLabelClass}">End Time (Optional)</label>
                                     <input type="time" id="task-end-time" class="${commonInputClass}" value="${endTime}">
                                 </div>
-                            </div>
-
-                            <div>
-                                <label for="task-recurrence" class="${commonLabelClass}">Recurrence</label>
-                                <select id="task-recurrence" class="${commonInputClass}">
-                                    <option value="none" ${recurrence === 'none' ? 'selected' : ''}>None (Single Task)</option>
-                                    <option value="daily" ${recurrence === 'daily' ? 'selected' : ''}>Daily</option>
-                                    <option value="weekly" ${recurrence === 'weekly' ? 'selected' : ''}>Weekly</option>
-                                    <option value="monthly" ${recurrence === 'monthly' ? 'selected' : ''}>Monthly</option>
-                                    <option value="yearly" ${recurrence === 'yearly' ? 'selected' : ''}>Yearly</option>
-                                </select>
-                            </div>
-
-                            <div>
-                                <label for="task-type" class="${commonLabelClass}">Task Type</label>
-                                <select id="task-type" class="${commonInputClass}">
-                                    ${predefinedTaskTypes.map(type => `
-                                        <option value="${type}" ${selectedTaskTypeOption === type ? 'selected' : ''}>${type}</option>
-                                    `).join('')}
-                                </select>
-                            </div>
-                            <div id="custom-task-type-div" class="${isCustomType ? '' : 'hidden'}">
-                                <label for="custom-task-type" class="${commonLabelClass}">Specify Other Task Type</label>
-                                <input type="text" id="custom-task-type" placeholder="e.g., Groceries, Project Report" class="${commonInputClass}" value="${customTaskTypeInputVal}">
                             </div>
 
                             <div class="flex flex-col sm:flex-row justify-end space-y-3 sm:space-y-0 sm:space-x-3 pt-4">
@@ -2046,17 +2096,10 @@ const firebaseConfig = {
 
             container.querySelector('#task-form').onsubmit = async (e) => {
                 e.preventDefault();
-                taskFormError = '';
-                taskFormIsLoading = true;
-                // Re-render to show loading state (if not already showing) and clear the error message if user has typed something
-                if (taskNameInput && taskErrorMessage && taskNameInput.value.trim() !== '') {
-                    taskFormError = ''; // Clear the error state if the user has provided valid input
-                    taskErrorMessage.classList.add('hidden'); // Hide the message immediately
-                }
-                renderApp();
-
-                const name = taskNameInput.value.trim();
+                // Capture all form values BEFORE setting loading state and re-rendering
+                const name = container.querySelector('#task-name').value.trim();
                 const description = container.querySelector('#task-description').value;
+                const additionalInfo = container.querySelector('#task-additional-info').value; // New field
                 const sDate = container.querySelector('#task-start-date').value;
                 const sTime = container.querySelector('#task-start-time').value;
                 const eDate = container.querySelector('#task-end-date').value;
@@ -2067,7 +2110,7 @@ const firebaseConfig = {
                     type = customTaskTypeInput.value.trim();
                     if (!type) {
                         taskFormError = "Please specify the custom task type.";
-                        taskFormIsLoading = false;
+                        taskFormIsLoading = false; // Ensure loading is off if validation fails immediately
                         renderApp();
                         return;
                     }
@@ -2075,23 +2118,28 @@ const firebaseConfig = {
 
                 if (!name) {
                     taskFormError = "Task name is required.";
-                    taskFormIsLoading = false;
+                    taskFormIsLoading = false; // Ensure loading is off if validation fails immediately
                     renderApp();
                     return;
                 }
                 if (!sDate) {
                     taskFormError = "Start date is required.";
-                    taskFormIsLoading = false;
+                    taskFormIsLoading = false; // Ensure loading is off if validation fails immediately
                     renderApp();
                     return;
                 }
 
+                taskFormIsLoading = true; // Set loading state after validation
+                taskFormError = ''; // Clear previous errors
+                renderApp(); // Re-render to show loading state
+
                 const taskData = {
                     name: name,
                     description: description,
+                    additionalInfo: additionalInfo, // New field
                     startDate: sDate,
                     startTime: sTime,
-                    endDate: eDate || sDate,
+                    endDate: eDate, 
                     endTime: eTime,
                     recurrence: rec,
                     type: type,
@@ -2099,8 +2147,8 @@ const firebaseConfig = {
                     isCompleted: false, // New field for completion status
                 };
 
-                console.log("Attempting to save task for user UID:", currentUser?.uid); // Debugging log
-                console.log("Task data being sent:", taskData); // Debugging log
+                console.log("Task data being sent:", taskData); // Diagnostic log
+                console.log("Task form submitted. Recurrence value from DOM (after capture):", rec); // Diagnostic log
 
                 try {
                     const userIdToUse = currentUser?.uid; // currentUser.uid will be set by auth listener
@@ -2147,8 +2195,13 @@ const firebaseConfig = {
                 endTimeDisplay = `<p class="text-slate-600">Ends: ${formattedEndDate} ${selectedTask.endTime ? `at ${selectedTask.endTime}` : ''}</p>`;
             }
 
-            const statusText = selectedTask.isCompleted ? 'Completed' : (new Date(selectedTask.startDate + "T00:00:00Z") < new Date().setHours(0,0,0,0) ? 'Overdue' : 'Upcoming');
-            const statusColor = selectedTask.isCompleted ? 'bg-green-200 text-green-800' : (new Date(selectedTask.startDate + "T00:00:00Z") < new Date().setHours(0,0,0,0) ? 'bg-red-200 text-red-800' : 'bg-purple-200 text-purple-800');
+            // Get today's date in UTC for consistent comparison
+            const todayUTC = new Date(Date.UTC(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()));
+            // Get task's start date in UTC for comparison
+            const taskStartUTC = new Date(selectedTask.startDate + "T00:00:00Z");
+
+            const statusText = selectedTask.isCompleted ? 'Completed' : (taskStartUTC < todayUTC ? 'Overdue' : 'Upcoming');
+            const statusColor = selectedTask.isCompleted ? 'bg-green-200 text-green-800' : (taskStartUTC < todayUTC ? 'bg-red-200 text-red-800' : 'bg-purple-200 text-purple-800');
             const showMarkDone = !selectedTask.isCompleted;
 
             appRoot.innerHTML = `
@@ -2171,6 +2224,12 @@ const firebaseConfig = {
                                 <h4 class="font-semibold text-slate-700">Description:</h4>
                                 <p class="text-slate-600 whitespace-pre-wrap">${selectedTask.description || "No description provided."}</p>
                             </div>
+                            ${selectedTask.additionalInfo ? `
+                            <div>
+                                <h4 class="font-semibold text-slate-700">Additional Info:</h4>
+                                <p class="text-slate-600 whitespace-pre-wrap">${selectedTask.additionalInfo}</p>
+                            </div>
+                            ` : ''}
                             <div>
                                 <h4 class="font-semibold text-slate-700">Date & Time:</h4>
                                 <p class="text-slate-600">
@@ -2258,9 +2317,11 @@ const firebaseConfig = {
                             navigateTo('landing');
                         } catch (error) {
                             console.error("Error deleting task:", error);
-                            showNotification(`Failed to delete task: ${error.message}. Ensure Firebase is configured and security rules allow writes.`, 'error');
+                            showNotification(`Failed to delete task: ${err.message}. Ensure Firebase is configured and security rules allow writes.`, 'error');
+                        } finally {
+                            // Ensure the deleting flag is reset regardless of success or failure
                             taskDetailIsDeleting = false;
-                            renderApp(); // Re-render to clear loading state
+                            renderApp(); // Re-render to clear loading state and re-enable buttons
                         }
                     },
                     () => { /* Cancelled */ },
