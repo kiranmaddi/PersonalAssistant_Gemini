@@ -378,6 +378,10 @@ const firebaseConfig = {
             showEventFormModal = false; // Close modals on navigation
             showTaskFormModal = false; // Close modals on navigation
 
+            // Reset deleting states when navigating away from detail views
+            eventDetailIsDeleting = false;
+            taskDetailIsDeleting = false;
+
             if (view === 'eventDetail') selectedEvent = data;
             if (view === 'taskDetail') selectedTask = data;
 
@@ -1884,8 +1888,10 @@ const firebaseConfig = {
                         } catch (error) {
                             console.error("Error deleting event:", error);
                             showNotification(`Failed to delete event: ${error.message}. Ensure Firebase is configured and security rules allow writes.`, 'error');
+                        } finally {
+                            // Ensure the deleting flag is reset regardless of success or failure
                             eventDetailIsDeleting = false;
-                            renderApp(); // Re-render to clear loading state
+                            renderApp(); // Re-render to clear loading state and re-enable buttons
                         }
                     },
                     () => { /* Cancelled */ },
@@ -2280,8 +2286,10 @@ const firebaseConfig = {
                         } catch (error) {
                             console.error("Error deleting task:", error);
                             showNotification(`Failed to delete task: ${err.message}. Ensure Firebase is configured and security rules allow writes.`, 'error');
+                        } finally {
+                            // Ensure the deleting flag is reset regardless of success or failure
                             taskDetailIsDeleting = false;
-                            renderApp(); // Re-render to clear loading state
+                            renderApp(); // Re-render to clear loading state and re-enable buttons
                         }
                     },
                     () => { /* Cancelled */ },
