@@ -171,6 +171,8 @@
     <div id="event-form-modal-container"></div>
     <!-- Task Form Modal Container -->
     <div id="task-form-modal-container"></div>
+    <!-- Import/Export Modal Container -->
+    <div id="import-export-modal-container"></div>
 
     <!-- Firebase SDKs -->
     <script type="module">
@@ -266,7 +268,7 @@ const firebaseConfig = {
         let userEvents = []; // Stores original events from Firestore
         let userTasks = []; // Stores original tasks from Firestore
         // Initial view will be 'auth' to show login screen
-        let currentView = 'auth'; // 'auth', 'landing', 'eventDetail', 'taskDetail'
+        let currentView = 'loading'; // Start with loading, then decide 'auth' or 'landing'
         let authScreen = 'login'; // 'login', 'register', 'forgotPassword' (only relevant if login is enabled)
         let selectedEvent = null;
         let selectedTask = null; // New state for selected task
@@ -279,6 +281,7 @@ const firebaseConfig = {
         let isEditingEvent = false; // true if editing, false if creating
         let showTaskFormModal = false;
         let isEditingTask = false; // true if editing, false if creating
+        let showImportExportModal = false; // New state for import/export modal
 
         // Auth Screen State
         let authInputEmail = '';
@@ -301,6 +304,7 @@ const firebaseConfig = {
         const confirmModalContainer = document.getElementById('confirm-modal-container');
         const eventFormModalContainer = document.getElementById('event-form-modal-container');
         const taskFormModalContainer = document.getElementById('task-form-modal-container');
+        const importExportModalContainer = document.getElementById('import-export-modal-container'); // New container
 
         const commonInputClass = "w-full px-4 py-3 rounded-lg bg-slate-50 border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow";
         const commonButtonClass = "w-full py-3 px-4 rounded-lg text-white font-semibold transition-all duration-300 ease-in-out";
@@ -377,6 +381,7 @@ const firebaseConfig = {
             selectedTask = null; // Clear previous selections
             showEventFormModal = false; // Close modals on navigation
             showTaskFormModal = false; // Close modals on navigation
+            showImportExportModal = false; // Close import/export modal on navigation
 
             // Reset deleting states when navigating away from detail views
             eventDetailIsDeleting = false;
@@ -407,6 +412,9 @@ const firebaseConfig = {
                 selectedTask = data;
                 currentView = 'landing'; // Keep landing page visible underneath
                 console.log("Navigating to editTask. Selected task object:", selectedTask); // Diagnostic log
+            } else if (view === 'importExport') { // New navigation for import/export
+                showImportExportModal = true;
+                currentView = 'landing'; // Keep landing page visible underneath
             }
             renderApp(); // Re-render the main app based on new view
         }
@@ -444,7 +452,7 @@ const firebaseConfig = {
                     // This is especially useful for anonymous users.
                     await setDoc(userDocRef, userProfile);
                 }
-                renderApp(); // Re-render after profile is fetched
+                // Don't call renderApp here, let onAuthStateChanged handle the initial render after profile is set.
             } catch (error) {
                 console.error("Error fetching user profile:", error);
                 userProfile = {
@@ -454,7 +462,7 @@ const firebaseConfig = {
                     photoURL: '',
                 };
                 showNotification(`Error fetching profile: ${error.message}`, 'error');
-                renderApp();
+                // Don't call renderApp here, let onAuthStateChanged handle the initial render after error.
             }
         }
 
@@ -546,15 +554,17 @@ const firebaseConfig = {
             if (user) {
                 // User is signed in (either real user or anonymous)
                 currentUser = user;
-                await fetchUserProfile(user.uid);
+                await fetchUserProfile(user.uid); // Fetch profile data
                 setupEventsListener(); // Start listening for events after user is authenticated
                 setupTasksListener(); // Start listening for tasks after user is authenticated
-                // Only navigate to landing if we are not already on it or an event/task detail/form
-                if (currentView === 'auth' || currentView === 'loading') {
+
+                // Only navigate to landing if we are currently loading or on the auth screen.
+                // This prevents disrupting current views like eventDetail if user was already on them.
+                if (currentView === 'loading' || currentView === 'auth') {
                     currentView = 'landing';
                 }
             } else {
-                // No user signed in, attempt anonymous sign-in to allow Firestore operations
+                // No user signed in, attempt anonymous sign-in or redirect to auth screen
                 try {
                     // Try to sign in with custom token if available (Canvas environment)
                     if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -563,16 +573,17 @@ const firebaseConfig = {
                         // Otherwise, sign in anonymously
                         await signInAnonymously(auth);
                     }
-                    // onAuthStateChanged will be triggered again with the new user object
+                    // onAuthStateChanged will be triggered again with the new user object (anonymous user)
                 } catch (error) {
-                    console.error("Error during anonymous sign-in:", error);
-                    // If anonymous sign-in also fails, then go to auth screen
-                    currentUser = null; // Ensure currentUser is null to show login
+                    console.error("Error during anonymous sign-in/custom token sign-in:", error);
+                    // If sign-in fails, ensure currentUser is null and switch to auth screen
+                    currentUser = null;
                     currentView = 'auth';
-                    showNotification(`Anonymous authentication failed: ${error.message}. Please try logging in.`, 'error');
+                    authScreenError = `Authentication failed: ${error.message}. Please sign in or register.`;
+                    showNotification(`Authentication failed: ${error.message}`, 'error');
                 }
             }
-            renderApp(); // Initial render after auth state is determined
+            renderApp(); // Always call renderApp after auth state change to update UI
         });
 
 
@@ -881,6 +892,11 @@ const firebaseConfig = {
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-plus-circle mr-2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg> New Task
                             </button>
+                            <button id="import-export-btn"
+                                class="flex items-center justify-center bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-file-text mr-2"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg> Import/Export
+                            </button>
                             <button id="sign-out-btn"
                                 class="flex items-center justify-center bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
                             >
@@ -921,6 +937,7 @@ const firebaseConfig = {
             // Modified to open modals
             document.getElementById('new-event-btn').onclick = () => navigateTo('newEvent');
             document.getElementById('new-task-btn').onclick = () => navigateTo('newTask');
+            document.getElementById('import-export-btn').onclick = () => navigateTo('importExport'); // New button listener
             document.getElementById('sign-out-btn').onclick = handleSignOut;
 
             // Attach event listeners to COMMON calendar controls
@@ -1969,7 +1986,7 @@ const firebaseConfig = {
 
             container.innerHTML = `
                 <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                    <div class="bg-white rounded-xl shadow-2xl p-6 md:p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto transform transition-all duration-300 ease-in-out scale-95 opacity-0 animate-modalEnter modal-content-area">
+                    <div class="bg-white rounded-xl shadow-2xl p-6 md:p-8 w-full max-w-xl max-h-[90vh] overflow-y-auto transform transition-all duration-300 ease-in-out scale-95 opacity-0 animate-modalEnter modal-content-area">
                         <div class="flex justify-between items-center mb-6">
                             <h2 class="text-2xl font-bold text-slate-800">
                                 ${isEditMode ? 'Edit Task Details' : 'Create New Task'}
@@ -2333,6 +2350,348 @@ const firebaseConfig = {
             lucide.createIcons(); // Re-create icons for the new content
         }
 
+        // --- New: Import/Export Modal ---
+        let importExportLoading = false;
+        let importExportError = '';
+        let selectedFile = null;
+
+        function renderImportExportModal() {
+            const container = importExportModalContainer;
+            if (!showImportExportModal) {
+                container.innerHTML = '';
+                return;
+            }
+
+            let errorHtml = '';
+            if (importExportError) {
+                errorHtml = `<div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-3 rounded-md text-sm mb-4 flex items-center"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-alert-triangle mr-2"><path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>${importExportError}</div>`;
+            }
+
+            container.innerHTML = `
+                <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div class="bg-white rounded-xl shadow-2xl p-6 md:p-8 w-full max-w-xl max-h-[90vh] overflow-y-auto transform transition-all duration-300 ease-in-out scale-95 opacity-0 animate-modalEnter modal-content-area">
+                        <div class="flex justify-between items-center mb-6">
+                            <h2 class="text-2xl font-bold text-slate-800">Import/Export Data</h2>
+                            <button id="close-import-export-modal" class="text-slate-400 hover:text-slate-600 transition-colors">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-plus-circle transform rotate-45"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>
+                            </button>
+                        </div>
+                        ${errorHtml}
+                        <div class="space-y-6">
+                            <div class="border border-slate-200 p-4 rounded-lg bg-slate-50">
+                                <h3 class="text-lg font-semibold text-slate-700 mb-3">Export Data</h3>
+                                <p class="text-sm text-slate-600 mb-4">Export all your events and tasks to a CSV file. This file can be used for backup or to import data into other applications.</p>
+                                <button id="export-data-btn"
+                                    class="w-full py-3 px-4 rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors focus:ring-4 focus:ring-blue-300 flex items-center justify-center"
+                                    ${importExportLoading ? 'disabled' : ''}
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-download mr-2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                                    ${importExportLoading ? 'Preparing export...' : 'Export All Data'}
+                                </button>
+                            </div>
+
+                            <div class="border border-slate-200 p-4 rounded-lg bg-slate-50">
+                                <h3 class="text-lg font-semibold text-slate-700 mb-3">Import Data</h3>
+                                <p class="text-sm text-slate-600 mb-4">Import events and tasks from a CSV file. Ensure the file format matches the exported template.</p>
+                                <input type="file" id="import-file-input" accept=".csv" class="hidden">
+                                <div class="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3 items-center">
+                                    <label for="import-file-input"
+                                        class="w-full sm:w-auto px-4 py-2 rounded-lg text-sm font-medium text-blue-700 bg-blue-100 hover:bg-blue-200 transition-colors cursor-pointer flex items-center justify-center border border-blue-300"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-folder-open mr-2"><path d="M6 15V4a2 2 0 0 1 2-2h7.93a2 2 0 0 1 1.66.88L21 6v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
+                                        Browse File
+                                    </label>
+                                    <span id="selected-file-name" class="text-sm text-slate-600 truncate flex-grow">
+                                        ${selectedFile ? selectedFile.name : 'No file chosen'}
+                                    </span>
+                                    <button id="import-selected-btn"
+                                        class="w-full sm:w-auto px-4 py-2 rounded-lg text-sm font-medium text-white bg-green-600 hover:bg-green-700 transition-colors focus:ring-4 focus:ring-green-300 flex items-center justify-center"
+                                        ${!selectedFile || importExportLoading ? 'disabled' : ''}
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-upload mr-2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+                                        ${importExportLoading ? 'Importing...' : 'Import Selected File'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            container.querySelector('#close-import-export-modal').onclick = () => {
+                showImportExportModal = false;
+                selectedFile = null; // Clear selected file on close
+                importExportError = ''; // Clear error on close
+                renderApp();
+            };
+
+            container.querySelector('#export-data-btn').onclick = handleExportData;
+
+            const importFileInput = container.querySelector('#import-file-input');
+            const importSelectedBtn = container.querySelector('#import-selected-btn');
+            const selectedFileNameSpan = container.querySelector('#selected-file-name');
+
+            importFileInput.onchange = (e) => {
+                selectedFile = e.target.files[0];
+                if (selectedFile) {
+                    selectedFileNameSpan.textContent = selectedFile.name;
+                    importSelectedBtn.disabled = false;
+                    importExportError = ''; // Clear error on new file selection
+                } else {
+                    selectedFileNameSpan.textContent = 'No file chosen';
+                    importSelectedBtn.disabled = true;
+                }
+                renderApp(); // Re-render to update button state
+            };
+
+            importSelectedBtn.onclick = handleImportData;
+
+            lucide.createIcons();
+        }
+
+        // --- CSV Utility Functions ---
+        function escapeCSV(value) {
+            if (value === null || value === undefined) return '';
+            let stringValue = String(value);
+            // If value contains comma, double quote, or newline, enclose in double quotes
+            // and escape existing double quotes by doubling them.
+            if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+                return '"' + stringValue.replace(/"/g, '""') + '"';
+            }
+            return stringValue;
+        }
+
+        function parseCSV(csvString) {
+            const rows = csvString.split(/\r?\n/).filter(line => line.trim() !== '');
+            if (rows.length === 0) return [];
+
+            const headers = rows[0].split(',').map(h => h.trim()); // Simple split for headers
+
+            const data = [];
+            for (let i = 1; i < rows.length; i++) {
+                const row = rows[i];
+                const values = [];
+                let inQuote = false;
+                let currentField = '';
+
+                for (let j = 0; j < row.length; j++) {
+                    const char = row[j];
+                    if (char === '"') {
+                        if (inQuote && j + 1 < row.length && row[j+1] === '"') {
+                            // Escaped double quote (e.g., "" inside a field)
+                            currentField += '"';
+                            j++; // Skip next char
+                        } else {
+                            // Toggle inQuote state
+                            inQuote = !inQuote;
+                        }
+                    } else if (char === ',' && !inQuote) {
+                        // End of a field
+                        values.push(currentField);
+                        currentField = '';
+                    } else {
+                        currentField += char;
+                    }
+                }
+                values.push(currentField); // Add the last field
+
+                const entry = {};
+                headers.forEach((header, index) => {
+                    entry[header] = values[index] !== undefined ? values[index] : '';
+                });
+                data.push(entry);
+            }
+            return data;
+        }
+
+
+        async function handleExportData() {
+            importExportLoading = true;
+            importExportError = '';
+            renderApp();
+
+            try {
+                const headers = ['Type', 'Name', 'Description', 'AdditionalInfo', 'StartDate', 'StartTime', 'EndDate', 'EndTime', 'Recurrence', 'TaskType', 'IsCompleted'];
+                let allData = [];
+
+                // Add events
+                userEvents.forEach(event => {
+                    allData.push({
+                        Type: 'Event',
+                        Name: event.name,
+                        Description: event.description || '',
+                        AdditionalInfo: event.additionalInfo || '', // New field
+                        StartDate: event.startDate,
+                        StartTime: event.startTime || '',
+                        EndDate: event.endDate || '',
+                        EndTime: event.endTime || '',
+                        Recurrence: event.recurrence,
+                        TaskType: '', // Events don't have task type
+                        IsCompleted: event.isCompleted ? 'TRUE' : 'FALSE'
+                    });
+                });
+
+                // Add tasks
+                userTasks.forEach(task => {
+                    allData.push({
+                        Type: 'Task',
+                        Name: task.name,
+                        Description: task.description || '',
+                        AdditionalInfo: task.additionalInfo || '', // New field
+                        StartDate: task.startDate,
+                        StartTime: task.startTime || '',
+                        EndDate: task.endDate || '',
+                        EndTime: task.endTime || '',
+                        Recurrence: task.recurrence,
+                        TaskType: task.type || '',
+                        IsCompleted: task.isCompleted ? 'TRUE' : 'FALSE'
+                    });
+                });
+
+                // If no data, add sample rows
+                if (allData.length === 0) {
+                    allData.push({
+                        Type: 'Event', Name: 'Sample Event', Description: 'This is a sample event description.', AdditionalInfo: 'Example: Meeting agenda, location details.', StartDate: '2025-07-01', StartTime: '09:00', EndDate: '2025-07-01', EndTime: '10:00', Recurrence: 'none', TaskType: '', IsCompleted: 'FALSE'
+                    });
+                    allData.push({
+                        Type: 'Task', Name: 'Sample Task', Description: 'This is a sample task description.', AdditionalInfo: 'Example: Groceries list, project steps.', StartDate: '2025-07-05', StartTime: '14:00', EndDate: '', EndTime: '', Recurrence: 'weekly', TaskType: 'Groceries', IsCompleted: 'FALSE'
+                    });
+                }
+
+                // Convert data to CSV string
+                let csvContent = headers.map(escapeCSV).join(',') + '\n';
+                allData.forEach(row => {
+                    const values = headers.map(header => escapeCSV(row[header]));
+                    csvContent += values.join(',') + '\n';
+                });
+
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.setAttribute('href', url);
+                link.setAttribute('download', 'personal_assistant_data.csv');
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+
+                showNotification('Data exported successfully!', 'success');
+
+            } catch (error) {
+                console.error('Export failed:', error);
+                importExportError = `Export failed: ${error.message}`;
+                showNotification(`Export failed: ${error.message}`, 'error');
+            } finally {
+                importExportLoading = false;
+                renderApp();
+            }
+        }
+
+        async function handleImportData() {
+            if (!selectedFile) {
+                importExportError = "Please select a CSV file to import.";
+                renderApp();
+                return;
+            }
+
+            importExportLoading = true;
+            importExportError = '';
+            renderApp();
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const csvString = e.target.result;
+                    const importedData = parseCSV(csvString);
+
+                    if (importedData.length === 0) {
+                        importExportError = "No data found in the CSV file or invalid format.";
+                        showNotification("Import failed: No data found in the CSV file or invalid format.", 'error');
+                        return;
+                    }
+
+                    const userIdToUse = currentUser?.uid;
+                    if (!userIdToUse) {
+                        importExportError = "User not authenticated. Cannot import data.";
+                        showNotification("Import failed: User not authenticated.", 'error');
+                        return;
+                    }
+
+                    let successfulImports = 0;
+                    let failedImports = 0;
+
+                    for (const row of importedData) {
+                        const type = row.Type;
+                        const name = row.Name;
+                        const startDate = row.StartDate;
+
+                        if (!type || !name || !startDate) {
+                            console.warn("Skipping row due to missing required fields:", row);
+                            failedImports++;
+                            continue;
+                        }
+
+                        const commonFields = {
+                            name: name,
+                            description: row.Description || '',
+                            additionalInfo: row.AdditionalInfo || '',
+                            startDate: startDate,
+                            startTime: row.StartTime || '',
+                            endDate: row.EndDate || '',
+                            endTime: row.EndTime || '',
+                            recurrence: row.Recurrence || 'none',
+                            isCompleted: (row.IsCompleted || 'FALSE').toUpperCase() === 'TRUE',
+                            createdAt: new Date().toISOString(),
+                            updatedAt: new Date().toISOString(),
+                        };
+
+                        try {
+                            if (type.toLowerCase() === 'event') {
+                                const eventData = { ...commonFields };
+                                await addDoc(collection(db, `artifacts/${appId}/users/${userIdToUse}/events`), eventData);
+                                successfulImports++;
+                            } else if (type.toLowerCase() === 'task') {
+                                const taskData = { ...commonFields, type: row.TaskType || 'Other' };
+                                await addDoc(collection(db, `artifacts/${appId}/users/${userIdToUse}/tasks`), taskData);
+                                successfulImports++;
+                            } else {
+                                console.warn("Unknown entry type, skipping:", row);
+                                failedImports++;
+                            }
+                        } catch (firestoreError) {
+                            console.error("Failed to add document to Firestore:", row, firestoreError);
+                            failedImports++;
+                        }
+                    }
+
+                    showNotification(`Import complete: ${successfulImports} items imported, ${failedImports} failed.`, successfulImports > 0 ? 'success' : 'error');
+                    if (failedImports > 0) {
+                        importExportError = `${failedImports} rows could not be imported. Check console for details.`;
+                    }
+                    selectedFile = null; // Clear file after import
+                    showImportExportModal = false;
+                    navigateTo('landing'); // Re-render main view to show updated data
+
+                } catch (error) {
+                    console.error('Error reading or parsing CSV:', error);
+                    importExportError = `Error processing file: ${error.message}`;
+                    showNotification(`Error processing file: ${error.message}`, 'error');
+                } finally {
+                    importExportLoading = false;
+                    renderApp();
+                }
+            };
+            reader.onerror = (error) => {
+                console.error('File reading error:', error);
+                importExportLoading = false;
+                importExportError = `Failed to read file: ${error.message}`;
+                showNotification(`Failed to read file: ${error.message}`, 'error');
+                renderApp();
+            };
+            reader.readAsText(selectedFile);
+        }
+
+
         // --- Main Render Function ---
         function renderApp() {
             // Display a warning if Firebase config is still using placeholder values or is missing
@@ -2362,6 +2721,9 @@ const firebaseConfig = {
                 case 'auth':
                     renderAuthScreen();
                     break;
+                case 'loading': // Handle loading state specifically after auth check
+                    renderLoadingSpinner();
+                    break;
                 case 'landing':
                     renderLandingPage();
                     break;
@@ -2372,7 +2734,8 @@ const firebaseConfig = {
                     renderTaskDetail();
                     break;
                 default:
-                    renderLoadingSpinner(); // Fallback
+                    // Fallback to loading, but ideally, this should not be reached if state is managed correctly
+                    renderLoadingSpinner();
             }
 
             // Render modals if their state is true, regardless of currentView
@@ -2386,6 +2749,11 @@ const firebaseConfig = {
             } else {
                 taskFormModalContainer.innerHTML = ''; // Ensure container is empty when modal is closed
             }
+            if (showImportExportModal) { // Render new modal
+                renderImportExportModal();
+            } else {
+                importExportModalContainer.innerHTML = '';
+            }
         }
 
         // Initial render on window load
@@ -2394,6 +2762,7 @@ const firebaseConfig = {
             lucide.createIcons();
             // The onAuthStateChanged listener handles the initial render based on auth state.
             // It will now attempt anonymous login, or show explicit login if that fails.
+            renderApp(); // Call renderApp once to start the process with the loading spinner
         };
 
         // Re-create Lucide icons whenever the DOM is updated
@@ -2403,6 +2772,7 @@ const firebaseConfig = {
         observer.observe(appRoot, { childList: true, subtree: true });
         observer.observe(eventFormModalContainer, { childList: true, subtree: true });
         observer.observe(taskFormModalContainer, { childList: true, subtree: true });
+        observer.observe(importExportModalContainer, { childList: true, subtree: true }); // Observe new container
 
 
     </script>
