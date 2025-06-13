@@ -185,8 +185,8 @@
             onAuthStateChanged,
             sendPasswordResetEmail,
             updateProfile,
-            signInAnonymously,
-            signInWithCustomToken
+            GoogleAuthProvider, // Import GoogleAuthProvider
+            signInWithPopup // Import signInWithPopup
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import {
             getFirestore,
@@ -208,23 +208,23 @@
         // Also, crucially, ensure Email/Password sign-in is enabled in:
         // Firebase Console > Authentication > Sign-in method.
         // The error "auth/operation-not-allowed" indicates this is not enabled.
-const firebaseConfig = {
+        const firebaseConfig = {
 
-  apiKey: "AIzaSyDnN-0llXDCh1ihfZMK7VKGwnOHydIxfGY",
+          apiKey: "AIzaSyDnN-0llXDCh1ihfZMK7VKGwnOHydIxfGY",
 
-  authDomain: "personal-assistant-831e4.firebaseapp.com",
+          authDomain: "personal-assistant-831e4.firebaseapp.com",
 
-  projectId: "personal-assistant-831e4",
+          projectId: "personal-assistant-831e4",
 
-  storageBucket: "personal-assistant-831e4.firebasestorage.app",
+          storageBucket: "personal-assistant-831e4.firebasestorage.app",
 
-  messagingSenderId: "843295495665",
+          messagingSenderId: "843295495665",
 
-  appId: "1:843295495665:web:adbecd2864441b196de050",
+          appId: "1:843295495665:web:adbecd2864441b196de050",
 
-  measurementId: "G-Q9H76MR2Y9"
+          measurementId: "G-Q9H76MR2Y9"
 
-};
+        };
 
 
         // --- Initialize Firebase ---
@@ -423,7 +423,7 @@ const firebaseConfig = {
         async function fetchUserProfile(uid) {
             if (!uid) {
                 userProfile = {
-                    name: 'Guest User',
+                    name: 'Guest User', // This branch should ideally not be hit with actual auth
                     email: 'guest@example.com',
                     phone: 'N/A',
                     photoURL: '',
@@ -442,14 +442,13 @@ const firebaseConfig = {
                         photoURL: data.photoURL || auth.currentUser?.photoURL || '',
                     };
                 } else {
+                    // Create a new profile if it doesn't exist (e.g., first login with Google)
                     userProfile = {
                         name: auth.currentUser?.displayName || '',
                         email: auth.currentUser?.email || '',
                         phone: '',
                         photoURL: auth.currentUser?.photoURL || '',
                     };
-                    // If no profile data exists, try to create a basic one.
-                    // This is especially useful for anonymous users.
                     await setDoc(userDocRef, userProfile);
                 }
                 // Don't call renderApp here, let onAuthStateChanged handle the initial render after profile is set.
@@ -468,11 +467,8 @@ const firebaseConfig = {
 
         // --- Update User Profile ---
         async function handleUpdateProfile(updatedProfileData) {
-            if (!currentUser) { // This case should ideally not be hit with anonymous auth, but kept as a safeguard
-                userProfile = updatedProfileData;
-                showProfileModal = false;
-                showNotification('Profile updated locally (no database sync in unauthenticated mode)!', 'success');
-                renderApp();
+            if (!currentUser) {
+                showNotification('Profile cannot be updated without a signed-in user!', 'error');
                 return;
             }
 
@@ -552,7 +548,7 @@ const firebaseConfig = {
         // --- Auth State Listener ---
         onAuthStateChanged(auth, async (user) => {
             if (user) {
-                // User is signed in (either real user or anonymous)
+                // User is signed in
                 currentUser = user;
                 await fetchUserProfile(user.uid); // Fetch profile data
                 setupEventsListener(); // Start listening for events after user is authenticated
@@ -564,24 +560,9 @@ const firebaseConfig = {
                     currentView = 'landing';
                 }
             } else {
-                // No user signed in, attempt anonymous sign-in or redirect to auth screen
-                try {
-                    // Try to sign in with custom token if available (Canvas environment)
-                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                         await signInWithCustomToken(auth, __initial_auth_token);
-                    } else {
-                        // Otherwise, sign in anonymously
-                        await signInAnonymously(auth);
-                    }
-                    // onAuthStateChanged will be triggered again with the new user object (anonymous user)
-                } catch (error) {
-                    console.error("Error during anonymous sign-in/custom token sign-in:", error);
-                    // If sign-in fails, ensure currentUser is null and switch to auth screen
-                    currentUser = null;
-                    currentView = 'auth';
-                    authScreenError = `Authentication failed: ${error.message}. Please sign in or register.`;
-                    showNotification(`Authentication failed: ${error.message}`, 'error');
-                }
+                // No user signed in, redirect to auth screen
+                currentUser = null;
+                currentView = 'auth';
             }
             renderApp(); // Always call renderApp after auth state change to update UI
         });
@@ -634,6 +615,17 @@ const firebaseConfig = {
                             <button type="button" id="forgot-password-btn" class="font-medium text-blue-600 hover:text-blue-500">Forgot password?</button>
                         </div>
                     </form>
+                    <div class="relative flex py-5 items-center">
+                        <div class="flex-grow border-t border-gray-300"></div>
+                        <span class="flex-shrink mx-4 text-gray-500">Or</span>
+                        <div class="flex-grow border-t border-gray-300"></div>
+                    </div>
+                    <button id="google-sign-in-btn" class="${commonButtonClass} bg-red-600 hover:bg-red-700 focus:ring-4 focus:ring-red-300 flex items-center justify-center">
+                        <svg class="w-5 h-5 mr-2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+                            <path d="M12.24 10.27v3.08h6.24c-.26 1.63-1.54 2.76-3.8 3.52 1.48 1.15 3.3 1.95 5.24 1.95 2.1 0 4.07-.68 5.73-2.02l4.13 3.2c-2.45 2.06-5.69 3.32-9.43 3.32-7.55 0-13.68-6.13-13.68-13.68s6.13-13.68 13.68-13.68c3.96 0 7.37 1.57 9.87 4.14L22.61 9.4c-1.3-1.22-3.1-2.1-5.18-2.1-2.92 0-5.4 1.25-7.18 3.07z"/>
+                        </svg>
+                        Sign in with Google
+                    </button>
                 `;
             } else if (authScreen === 'register') {
                 titleText = "Create your account to get started.";
@@ -721,6 +713,7 @@ const firebaseConfig = {
                 };
                 document.getElementById('login-email').oninput = (e) => authInputEmail = e.target.value;
                 document.getElementById('login-password').oninput = (e) => authInputPassword = e.target.value;
+                document.getElementById('google-sign-in-btn').onclick = handleGoogleSignIn; // Attach Google sign-in
             }
             if (document.getElementById('register-form')) {
                 document.getElementById('register-form').onsubmit = handleRegister;
@@ -752,6 +745,7 @@ const firebaseConfig = {
             if (document.getElementById('signin-link-from-forgot')) {
                 document.getElementById('signin-link-from-forgot').onclick = () => setAuthScreen('login');
             }
+            lucide.createIcons(); // Re-create icons for the new content
         }
 
         function setAuthScreen(screen) {
@@ -801,7 +795,8 @@ const firebaseConfig = {
                 authScreenMessage = "Registration successful! Please log in.";
                 showNotification("Registration successful! Please log in.", "success");
                 setAuthScreen('login');
-            } catch (err) {
+            }
+            catch (err) {
                 if (err.code === 'auth/operation-not-allowed') {
                     authScreenError = "Registration failed: Email/Password sign-in is not enabled for this project. Please contact the administrator or check your Firebase console settings.";
                 } else {
@@ -821,7 +816,8 @@ const firebaseConfig = {
                 const userCredential = await signInWithEmailAndPassword(auth, authInputEmail, authInputPassword);
                 console.log("Logged in user UID:", userCredential.user.uid); // Debugging log
                 showNotification("Logged in successfully!", "success");
-            } catch (err) {
+            }
+            catch (err) {
                  if (err.code === 'auth/operation-not-allowed') {
                     authScreenError = "Login failed: Email/Password sign-in is not enabled for this project. Please contact the administrator or check your Firebase console settings.";
                 } else if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
@@ -835,6 +831,46 @@ const firebaseConfig = {
                 renderAuthScreen();
             }
         }
+
+        async function handleGoogleSignIn() {
+            authScreenError = '';
+            authScreenMessage = '';
+            try {
+                const provider = new GoogleAuthProvider();
+                const result = await signInWithPopup(auth, provider);
+                const user = result.user;
+                console.log("Signed in with Google:", user.uid);
+                showNotification("Signed in with Google successfully!", "success");
+
+                // Check if user profile already exists, if not, create a basic one
+                const userDocRef = doc(db, `artifacts/${appId}/users/${user.uid}/profile`, 'userData');
+                const docSnap = await getDoc(userDocRef);
+                if (!docSnap.exists()) {
+                    await setDoc(userDocRef, {
+                        name: user.displayName || '',
+                        email: user.email || '',
+                        phone: '',
+                        photoURL: user.photoURL || '',
+                        createdAt: new Date().toISOString(),
+                    });
+                }
+                // onAuthStateChanged will handle the rest of the navigation
+            } catch (error) {
+                console.error("Google Sign-In Error:", error);
+                if (error.code === 'auth/popup-closed-by-user') {
+                    authScreenError = "Sign-in cancelled.";
+                } else if (error.code === 'auth/cancelled-popup-request') {
+                    authScreenError = "Already attempting to sign in. Please wait.";
+                } else if (error.code === 'auth/operation-not-allowed') {
+                    authScreenError = "Google Sign-in is not enabled for this project. Please enable it in Firebase Console > Authentication > Sign-in method.";
+                } else {
+                    authScreenError = `Google Sign-In Failed: ${error.message}`;
+                }
+                showNotification(`Google Sign-In Failed: ${error.message}`, 'error');
+                renderAuthScreen();
+            }
+        }
+
 
         async function handlePasswordReset(e) {
             e.preventDefault();
@@ -2700,28 +2736,27 @@ const firebaseConfig = {
                     <div class="flex flex-col items-center justify-center min-h-screen bg-red-50 p-4 text-center">
                         <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-alert-triangle text-red-500 mb-4"><path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
                         <h1 class="text-2xl font-bold text-red-800 mb-2">Firebase Not Fully Configured!</h1>
-                        <p class="text-red-700 mb-4">You are currently in **Guest Mode** (login bypassed). Data persistence will not work unless you replace the placeholder values in the \`firebaseConfig\` object within the script tag and ensure Firebase security rules are correctly set up.</p>
-                        <p class="text-red-700 text-sm">You can find your config in Firebase Console > Project settings > Your apps > Web app. For guest mode persistence, ensure Firestore security rules allow writes for the ID 'unauthenticated_guest_fallback' or configure anonymous authentication.</p>
+                        <p class="text-red-700 mb-4">The Firebase configuration seems incomplete or is using placeholder values. Please update it in the script tag within the HTML.</p>
+                        <p class="text-red-700 text-sm">You can find your config in Firebase Console > Project settings > Your apps > Web app. Ensure also that Email/Password and Google sign-in methods are enabled under Authentication > Sign-in method.</p>
                     </div>
                 `;
-                // If config is placeholder, bypass login and show warning, then render landing page
-                renderLandingPage();
-                return;
+                return; // Stop rendering further if config is invalid
             }
 
-
-            // If Firebase config is set, proceed with normal auth flow or render based on currentView
-            if (currentUser === null && currentView !== 'auth') {
-                 // If Firebase config is real and no user, show loading or redirect to auth
-                renderLoadingSpinner();
-                return;
+            // Determine which screen to render
+            if (currentUser === null) {
+                // If no user, always show the auth screen
+                currentView = 'auth';
+            } else if (currentView === 'loading') {
+                // If loading and user is now available, switch to landing
+                currentView = 'landing';
             }
 
             switch (currentView) {
                 case 'auth':
                     renderAuthScreen();
                     break;
-                case 'loading': // Handle loading state specifically after auth check
+                case 'loading': // This case should primarily show a spinner while auth is checking
                     renderLoadingSpinner();
                     break;
                 case 'landing':
@@ -2734,8 +2769,7 @@ const firebaseConfig = {
                     renderTaskDetail();
                     break;
                 default:
-                    // Fallback to loading, but ideally, this should not be reached if state is managed correctly
-                    renderLoadingSpinner();
+                    renderLoadingSpinner(); // Fallback
             }
 
             // Render modals if their state is true, regardless of currentView
@@ -2761,7 +2795,6 @@ const firebaseConfig = {
              // This is important for Lucide icons to render correctly after DOM is loaded
             lucide.createIcons();
             // The onAuthStateChanged listener handles the initial render based on auth state.
-            // It will now attempt anonymous login, or show explicit login if that fails.
             renderApp(); // Call renderApp once to start the process with the loading spinner
         };
 
