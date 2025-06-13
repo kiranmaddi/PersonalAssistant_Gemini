@@ -387,6 +387,10 @@
             eventDetailIsDeleting = false;
             taskDetailIsDeleting = false;
 
+            // Reset deleting states when navigating away from detail views
+            eventDetailIsDeleting = false;
+            taskDetailIsDeleting = false;
+
             if (view === 'eventDetail') selectedEvent = data;
             if (view === 'taskDetail') selectedTask = data;
 
