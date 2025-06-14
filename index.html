@@ -208,7 +208,7 @@
         // Also, crucially, ensure Email/Password sign-in is enabled in:
         // Firebase Console > Authentication > Sign-in method.
         // The error "auth/operation-not-allowed" indicates this is not enabled.
-        const firebaseConfig = {
+	        const firebaseConfig = {
 
           apiKey: "AIzaSyDnN-0llXDCh1ihfZMK7VKGwnOHydIxfGY",
 
@@ -225,6 +225,7 @@
           measurementId: "G-Q9H76MR2Y9"
 
         };
+	
 
 
         // --- Initialize Firebase ---
@@ -382,10 +383,6 @@
             showEventFormModal = false; // Close modals on navigation
             showTaskFormModal = false; // Close modals on navigation
             showImportExportModal = false; // Close import/export modal on navigation
-
-            // Reset deleting states when navigating away from detail views
-            eventDetailIsDeleting = false;
-            taskDetailIsDeleting = false;
 
             // Reset deleting states when navigating away from detail views
             eventDetailIsDeleting = false;
@@ -1181,7 +1178,7 @@
                     // Check if the single event falls within the target month (inclusive of start and end) in UTC
                     const singleEntryDateUTC = new Date(entry.startDate + "T00:00:00Z");
                     if (singleEntryDateUTC.getUTCFullYear() === targetYear && singleEntryDateUTC.getUTCMonth() === targetMonth) {
-                        occurrences.push({ ...entry, isOccurrence: false });
+                        occurrences.push({ ...entry, isOccurrence: false, isCompleted: entry.isCompleted || false }); // Pass isCompleted
                     }
                     return; // Done with this entry, move to next.
                 }
@@ -1215,14 +1212,18 @@
                 while (currentOccurrenceDate <= endOfMonth && (!entryEndDate || currentOccurrenceDate <= entryEndDate)) {
                     // Only add if it falls within the target month (actual month and year in UTC)
                     if (currentOccurrenceDate.getUTCFullYear() === targetYear && currentOccurrenceDate.getUTCMonth() === targetMonth) {
+                        const occurrenceDateStr = currentOccurrenceDate.toISOString().split('T')[0];
+                        const isOccurrenceCompleted = Array.isArray(entry.completedOccurrencesDates) && entry.completedOccurrencesDates.includes(occurrenceDateStr);
+
                         const newOccurrence = {
                             ...entry,
                             // Create a unique ID for each occurrence to distinguish from original
-                            id: `${entry.id}_${currentOccurrenceDate.toISOString().split('T')[0]}`,
-                            startDate: currentOccurrenceDate.toISOString().split('T')[0], //YYYY-MM-DD format (UTC)
+                            id: `${entry.id}_${occurrenceDateStr}`, // Use original ID + date for unique occurrence ID
+                            startDate: occurrenceDateStr, //YYYY-MM-DD format (UTC)
                             isOccurrence: true, // Mark as generated occurrence
                             originalId: entry.id, // Reference to original event (Firestore ID)
-                            originalStartDate: entry.startDate // Store original event's start date
+                            originalStartDate: entry.startDate, // Store original event's start date
+                            isCompleted: isOccurrenceCompleted // Set completion based on completedOccurrencesDates
                         };
                         occurrences.push(newOccurrence);
                     }
@@ -1289,21 +1290,25 @@
 
                 // Display up to 1 event and up to 1 task in the tile, show count for more
                 if (eventsOnThisDay.length > 0) {
+                    const event = eventsOnThisDay[0];
+                    const eventBubbleClass = event.isCompleted ? 'bg-green-500' : 'bg-blue-500';
                     entryBubblesHtml += `
-                        <div class="p-1 bg-blue-500 text-white text-[10px] md:text-xs rounded truncate leading-tight"
-                            title="${eventsOnThisDay[0].name}: ${eventsOnThisDay[0].description || ''} (${eventsOnThisDay[0].startTime || ''})"
+                        <div class="p-1 ${eventBubbleClass} text-white text-[10px] md:text-xs rounded truncate leading-tight"
+                            title="${event.name}: ${event.description || ''} (${event.startTime || ''})"
                         >
-                            Event: ${eventsOnThisDay[0].name}
+                            Event: ${event.name}
                         </div>
                     `;
                     entriesCount += eventsOnThisDay.length;
                 }
                 if (tasksOnThisDay.length > 0) {
+                    const task = tasksOnThisDay[0];
+                    const taskBubbleClass = task.isCompleted ? 'bg-green-500' : 'bg-purple-500';
                     entryBubblesHtml += `
-                        <div class="p-1 bg-purple-500 text-white text-[10px] md:text-xs rounded truncate leading-tight"
-                            title="${tasksOnThisDay[0].name}: ${tasksOnThisDay[0].description || ''} (${tasksOnThisDay[0].startTime || ''})"
+                        <div class="p-1 ${taskBubbleClass} text-white text-[10px] md:text-xs rounded truncate leading-tight"
+                            title="${task.name}: ${task.description || ''} (${task.startTime || ''})"
                         >
-                            Task: ${tasksOnThisDay[0].name}
+                            Task: ${task.name}
                         </div>
                     `;
                     entriesCount += tasksOnThisDay.length;
@@ -1361,9 +1366,18 @@
                 if (selectedDayEvents.length > 0) {
                     detailsListHtml += `<li class="font-bold text-slate-700 pt-2 pb-1">Events:</li>`;
                     selectedDayEvents.forEach(event => {
+                        const statusClass = event.isCompleted ? 'bg-green-50 border-green-200 text-green-700' : 'bg-blue-50 border-blue-200 text-blue-700';
                         detailsListHtml += `
-                            <li class="p-3 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 cursor-pointer transition-colors" data-type="event" data-id="${event.id}" data-original-id="${event.originalId || event.id}">
-                                <p class="font-semibold text-blue-700">${event.name}</p>
+                            <li class="p-3 ${statusClass} rounded-lg hover:bg-blue-100 cursor-pointer transition-colors" data-type="event" data-id="${event.id}" data-original-id="${event.originalId || event.id}" data-start-date="${event.startDate}">
+                                <div class="flex justify-between items-center">
+                                    <p class="font-semibold">${event.name}</p>
+                                    ${!event.isCompleted ? `
+                                        <button class="mark-done-btn px-2 py-0.5 bg-green-500 text-white rounded-md text-xs font-semibold hover:bg-green-600 transition-colors"
+                                            data-id="${event.id}" data-type="event" data-original-id="${event.originalId || event.id}" data-start-date="${event.startDate}">
+                                            Done
+                                        </button>
+                                    ` : `<span class="text-xs font-medium text-green-700">Completed</span>`}
+                                </div>
                                 <p class="text-sm text-slate-600 truncate">${event.description || "No description"}</p>
                                 <p class="text-xs text-slate-500">
                                     ${event.startTime} ${event.endTime ? ` - ${event.endTime}` : ''}
@@ -1378,9 +1392,18 @@
                 if (selectedDayTasks.length > 0) {
                     detailsListHtml += `<li class="font-bold text-slate-700 pt-4 pb-1">Tasks:</li>`;
                     selectedDayTasks.forEach(task => {
+                        const statusClass = task.isCompleted ? 'bg-green-50 border-green-200 text-green-700' : 'bg-purple-50 border-purple-200 text-purple-700';
                         detailsListHtml += `
-                            <li class="p-3 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 cursor-pointer transition-colors" data-type="task" data-id="${task.id}" data-original-id="${task.originalId || task.id}">
-                                <p class="font-semibold text-purple-700">${task.name}</p>
+                            <li class="p-3 ${statusClass} rounded-lg hover:bg-purple-100 cursor-pointer transition-colors" data-type="task" data-id="${task.id}" data-original-id="${task.originalId || task.id}" data-start-date="${task.startDate}">
+                                <div class="flex justify-between items-center">
+                                    <p class="font-semibold">${task.name}</p>
+                                    ${!task.isCompleted ? `
+                                        <button class="mark-done-btn px-2 py-0.5 bg-green-500 text-white rounded-md text-xs font-semibold hover:bg-green-600 transition-colors"
+                                            data-id="${task.id}" data-type="task" data-original-id="${task.originalId || task.id}" data-start-date="${task.startDate}">
+                                            Done
+                                        </button>
+                                    ` : `<span class="text-xs font-medium text-green-700">Completed</span>`}
+                                </div>
                                 <p class="text-sm text-slate-600">Type: ${task.type || 'General'}</p>
                                 <p class="text-sm text-slate-600 truncate">${task.description || "No description"}</p>
                                 <p class="text-xs text-slate-500">
@@ -1440,9 +1463,13 @@
                 modalElement.remove();
             };
 
-            modalElement.querySelectorAll('[data-original-id]').forEach(itemLi => {
-                itemLi.onclick = () => {
-                    // When clicking a recurring occurrence, navigate to the original event's detail page
+            // Event listener for clicking on a detail item (event or task)
+            modalElement.querySelectorAll('li[data-original-id]').forEach(itemLi => {
+                itemLi.onclick = (e) => {
+                    // Prevent navigation if the "Mark Done" button was clicked
+                    if (e.target.classList.contains('mark-done-btn')) {
+                        return;
+                    }
                     const originalId = itemLi.dataset.originalId;
                     const type = itemLi.dataset.type;
                     if (type === 'event') {
@@ -1456,6 +1483,15 @@
                     modalElement.remove();
                 };
             });
+
+            // Event listener for "Mark Done" buttons within the modal
+            modalElement.querySelectorAll('.mark-done-btn').forEach(button => {
+                button.onclick = (e) => {
+                    e.stopPropagation(); // Prevent the parent <li> click from firing
+                    handleMarkDoneClick(e.target);
+                };
+            });
+
             lucide.createIcons(); // Re-create icons for the new modal content
         }
 
@@ -1500,7 +1536,7 @@
                 let isBold = false;
                 let showMarkDone = false;
 
-                if (entry.isCompleted) {
+                if (entry.isCompleted) { // Use the 'isCompleted' flag directly from the occurrence
                     statusClass = 'text-green-700 bg-green-50 border-green-200';
                     statusText = 'Completed';
                 } else if (entryDateUTC < nowUTC) { // Compare UTC dates
@@ -1517,13 +1553,13 @@
 
                 const markDoneButton = showMarkDone && !entry.isCompleted ? `
                     <button class="mark-done-btn px-3 py-1 bg-green-500 text-white rounded-md text-xs font-semibold hover:bg-green-600 transition-colors"
-                        data-id="${entry.id}" data-type="${type}" data-original-id="${entry.originalId || entry.id}">
+                        data-id="${entry.id}" data-type="${type}" data-original-id="${entry.originalId || entry.id}" data-start-date="${entry.startDate}">
                         Mark Done
                     </button>
                 ` : '';
 
                 return `
-                    <li class="p-4 rounded-lg shadow-sm cursor-pointer ${statusClass}" data-id="${entry.id}" data-type="${type}" data-original-id="${entry.originalId || entry.id}">
+                    <li class="p-4 rounded-lg shadow-sm cursor-pointer ${statusClass}" data-id="${entry.id}" data-type="${type}" data-original-id="${entry.originalId || entry.id}" data-start-date="${entry.startDate}">
                         <div class="flex justify-between items-center mb-2">
                             <h4 class="font-semibold ${isBold ? 'text-lg md:text-xl font-bold' : 'text-base md:text-lg'}">${entry.name}</h4>
                             <span class="text-xs font-medium px-2 py-0.5 rounded-full ${entry.isCompleted ? 'bg-green-200 text-green-800' : (entryDateUTC < nowUTC && !entry.isCompleted ? 'bg-red-200 text-red-800' : 'bg-blue-200 text-blue-800')}">
@@ -1571,7 +1607,7 @@
                 </div>
             `;
 
-            listContainer.querySelectorAll('[data-original-id]').forEach(itemElement => {
+            listContainer.querySelectorAll('li[data-original-id]').forEach(itemElement => {
                 itemElement.onclick = (e) => {
                     // Prevent marking done from also navigating to detail
                     if (e.target.classList.contains('mark-done-btn')) return;
@@ -1592,33 +1628,61 @@
             listContainer.querySelectorAll('.mark-done-btn').forEach(button => {
                 button.onclick = async (e) => {
                     e.stopPropagation(); // Prevent the parent <li> click from firing
-                    const id = e.target.dataset.originalId; // Use originalId for marking as done
-                    const type = e.target.dataset.type;
-
-                    showConfirmModal(
-                        "Mark as Done",
-                        `Are you sure you want to mark this ${type} as done?`
-                        ,
-                        async () => {
-                            try {
-                                const userIdToUse = currentUser?.uid; // currentUser.uid will be set by auth listener
-                                const collectionRef = collection(db, `artifacts/${appId}/users/${userIdToUse}/${type === 'event' ? 'events' : 'tasks'}`);
-                                const docRef = doc(collectionRef, id);
-                                await updateDoc(docRef, { isCompleted: true });
-                                showNotification(`${type.charAt(0).toUpperCase() + type.slice(1)} marked as done!`, 'success');
-                            } catch (error) {
-                                console.error(`Error marking ${type} as done:`, error);
-                                showNotification(`Failed to mark ${type} as done: ${error.message}. Ensure Firebase is configured and security rules allow writes.`, 'error');
-                            }
-                        },
-                        () => { /* Cancelled */ },
-                        "Yes, Mark Done",
-                        "Cancel",
-                        "bg-green-600 hover:bg-green-700"
-                    );
+                    handleMarkDoneClick(e.target);
                 };
             });
             lucide.createIcons(); // Re-create icons for the new content
+        }
+
+        async function handleMarkDoneClick(targetButton) {
+            const id = targetButton.dataset.originalId; // Use originalId for the Firestore document
+            const type = targetButton.dataset.type;
+            const occurrenceDate = targetButton.dataset.startDate; // The specific date of the occurrence
+
+            showConfirmModal(
+                "Mark as Done",
+                `Are you sure you want to mark this ${type} occurrence on ${occurrenceDate} as done?`
+                ,
+                async () => {
+                    try {
+                        const userIdToUse = currentUser?.uid;
+                        const collectionPath = `artifacts/${appId}/users/${userIdToUse}/${type === 'event' ? 'events' : 'tasks'}`;
+                        const docRef = doc(db, collectionPath, id); // Reference to the original document
+
+                        // Fetch the current document to get existing completedOccurrencesDates
+                        const docSnap = await getDoc(docRef);
+                        if (docSnap.exists()) {
+                            const data = docSnap.data();
+                            if (data.recurrence && data.recurrence !== 'none') {
+                                // For recurring items, update the completedOccurrencesDates array
+                                const currentCompletedDates = Array.isArray(data.completedOccurrencesDates) ? data.completedOccurrencesDates : [];
+                                if (!currentCompletedDates.includes(occurrenceDate)) {
+                                    await updateDoc(docRef, {
+                                        completedOccurrencesDates: [...currentCompletedDates, occurrenceDate],
+                                        updatedAt: new Date().toISOString()
+                                    });
+                                }
+                            } else {
+                                // For non-recurring items, update isCompleted flag
+                                await updateDoc(docRef, {
+                                    isCompleted: true,
+                                    updatedAt: new Date().toISOString()
+                                });
+                            }
+                            showNotification(`${type.charAt(0).toUpperCase() + type.slice(1)} occurrence marked as done!`, 'success');
+                        } else {
+                            showNotification(`Error: Original ${type} not found.`, 'error');
+                        }
+                    } catch (error) {
+                        console.error(`Error marking ${type} as done:`, error);
+                        showNotification(`Failed to mark ${type} as done: ${error.message}. Ensure Firebase is configured and security rules allow writes.`, 'error');
+                    }
+                },
+                () => { /* Cancelled */ },
+                "Yes, Mark Done",
+                "Cancel",
+                "bg-green-600 hover:bg-green-700"
+            );
         }
 
 
@@ -1790,7 +1854,10 @@
                     endTime: eTime,
                     recurrence: rec,
                     updatedAt: new Date().toISOString(),
-                    isCompleted: false, // New field for completion status
+                    // When creating/updating, this field is for the original document.
+                    // It will store dates of completed occurrences, NOT a simple boolean for the template.
+                    completedOccurrencesDates: isEditMode ? (selectedEvent.completedOccurrencesDates || []) : [],
+                    isCompleted: false, // This is no longer used for recurring events, but keep for non-recurring.
                 };
 
                 console.log("Attempting to save event for user UID:", currentUser?.uid); // Debugging log
@@ -1841,15 +1908,37 @@
                 endTimeDisplay = `<p class="text-slate-600">Ends: ${formattedEndDate} ${selectedEvent.endTime ? `at ${selectedEvent.endTime}` : ''}</p>`;
             }
 
-            // Get today's date in UTC for consistent comparison
+            // Determine status for the ORIGINAL event (not occurrences)
             const todayUTC = new Date(Date.UTC(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()));
-            // Get event's start date in UTC for comparison
             const eventStartUTC = new Date(selectedEvent.startDate + "T00:00:00Z");
 
-            const statusText = selectedEvent.isCompleted ? 'Completed' : (eventStartUTC < todayUTC ? 'Overdue' : 'Upcoming');
-            const statusColor = selectedEvent.isCompleted ? 'bg-green-200 text-green-800' : (eventStartUTC < todayUTC ? 'bg-red-200 text-red-800' : 'bg-blue-200 text-blue-800');
-            const showMarkDone = !selectedEvent.isCompleted;
+            let statusText = 'Upcoming';
+            let statusColor = 'bg-blue-200 text-blue-800';
+            let showMarkDone = true;
 
+            if (selectedEvent.recurrence === 'none') {
+                // For non-recurring events, use the simple isCompleted flag
+                if (selectedEvent.isCompleted) {
+                    statusText = 'Completed';
+                    statusColor = 'bg-green-200 text-green-800';
+                    showMarkDone = false;
+                } else if (eventStartUTC < todayUTC) {
+                    statusText = 'Overdue';
+                    statusColor = 'bg-red-200 text-red-800';
+                }
+            } else {
+                // For recurring events, determine status based on if ANY occurrences are done
+                const hasCompletedOccurrences = Array.isArray(selectedEvent.completedOccurrencesDates) && selectedEvent.completedOccurrencesDates.length > 0;
+                if (hasCompletedOccurrences) {
+                    statusText = 'Has Completed Occurrences';
+                    statusColor = 'bg-yellow-200 text-yellow-800';
+                    showMarkDone = true; // Still allow marking current day's occurrence done
+                } else if (eventStartUTC < todayUTC) {
+                    // If recurring and starts in past, but no occurrences are completed
+                    statusText = 'Upcoming (Some may be overdue)'; // More general for recurring
+                    statusColor = 'bg-blue-200 text-blue-800';
+                }
+            }
 
             appRoot.innerHTML = `
                 <div class="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
@@ -1884,6 +1973,12 @@
                                 <h4 class="font-semibold text-slate-700">Recurrence:</h4>
                                 <p class="text-slate-600 capitalize">${selectedEvent.recurrence || "None"}</p>
                             </div>
+                            ${selectedEvent.recurrence !== 'none' && Array.isArray(selectedEvent.completedOccurrencesDates) && selectedEvent.completedOccurrencesDates.length > 0 ? `
+                                <div>
+                                    <h4 class="font-semibold text-slate-700">Completed Occurrences:</h4>
+                                    <p class="text-slate-600 text-sm">${selectedEvent.completedOccurrencesDates.join(', ')}</p>
+                                </div>
+                            ` : ''}
                         </div>
 
                         <div class="flex flex-col sm:flex-row justify-end space-y-3 sm:space-y-0 sm:space-x-3">
@@ -1900,8 +1995,11 @@
                             ${showMarkDone ? `
                             <button id="detail-mark-done-btn"
                                 class="w-full sm:w-auto px-6 py-3 rounded-lg text-sm font-medium text-white bg-green-500 hover:bg-green-600 transition-colors flex items-center justify-center"
+                                data-original-id="${selectedEvent.id}"
+                                data-type="event"
+                                data-start-date="${new Date().toISOString().split('T')[0]}" <!-- Mark current day's occurrence -->
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check-circle mr-2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg> Mark Done
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check-circle mr-2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg> Mark Today's Occurrence Done
                             </button>
                             ` : ''}
                             <button id="detail-delete-btn"
@@ -1920,29 +2018,7 @@
             document.getElementById('detail-back-btn').onclick = () => navigateTo('landing');
             document.getElementById('detail-edit-btn').onclick = () => navigateTo('editEvent', selectedEvent);
             if (document.getElementById('detail-mark-done-btn')) {
-                document.getElementById('detail-mark-done-btn').onclick = () => {
-                    showConfirmModal(
-                        "Mark as Done",
-                        `Are you sure you want to mark "${selectedEvent.name}" as done?`
-                        ,
-                        async () => {
-                            try {
-                                const userIdToUse = currentUser?.uid;
-                                const eventDocRef = doc(db, `artifacts/${appId}/users/${userIdToUse}/events`, selectedEvent.id);
-                                await updateDoc(eventDocRef, { isCompleted: true });
-                                showNotification("Event marked as done!", "success");
-                                navigateTo('landing'); // Go back to calendar after update
-                            } catch (error) {
-                                console.error("Error marking event as done:", error);
-                                showNotification(`Failed to mark event as done: ${error.message}. Ensure Firebase is configured and security rules allow writes.`, 'error');
-                            }
-                        },
-                        () => { /* Cancelled */ },
-                        "Yes, Mark Done",
-                        "Cancel",
-                        "bg-green-600 hover:bg-green-700"
-                    );
-                };
+                document.getElementById('detail-mark-done-btn').onclick = (e) => handleMarkDoneClick(e.target);
             }
             document.getElementById('detail-delete-btn').onclick = () => {
                 showConfirmModal(
@@ -1960,7 +2036,7 @@
                             navigateTo('landing');
                         } catch (error) {
                             console.error("Error deleting event:", error);
-                            showNotification(`Failed to delete event: ${err.message}. Ensure Firebase is configured and security rules allow writes.`, 'error');
+                            showNotification(`Failed to delete event: ${error.message}. Ensure Firebase is configured and security rules allow writes.`, 'error');
                         } finally {
                             // Ensure the deleting flag is reset regardless of success or failure
                             eventDetailIsDeleting = false;
@@ -2201,7 +2277,10 @@
                     recurrence: rec,
                     type: type,
                     updatedAt: new Date().toISOString(),
-                    isCompleted: false, // New field for completion status
+                    // When creating/updating, this field is for the original document.
+                    // It will store dates of completed occurrences, NOT a simple boolean for the template.
+                    completedOccurrencesDates: isEditMode ? (selectedTask.completedOccurrencesDates || []) : [],
+                    isCompleted: false, // This is no longer used for recurring tasks, but keep for non-recurring.
                 };
 
                 console.log("Task data being sent:", taskData); // Diagnostic log
@@ -2252,14 +2331,37 @@
                 endTimeDisplay = `<p class="text-slate-600">Ends: ${formattedEndDate} ${selectedTask.endTime ? `at ${selectedTask.endTime}` : ''}</p>`;
             }
 
-            // Get today's date in UTC for consistent comparison
+            // Determine status for the ORIGINAL task (not occurrences)
             const todayUTC = new Date(Date.UTC(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()));
-            // Get task's start date in UTC for comparison
             const taskStartUTC = new Date(selectedTask.startDate + "T00:00:00Z");
 
-            const statusText = selectedTask.isCompleted ? 'Completed' : (taskStartUTC < todayUTC ? 'Overdue' : 'Upcoming');
-            const statusColor = selectedTask.isCompleted ? 'bg-green-200 text-green-800' : (taskStartUTC < todayUTC ? 'bg-red-200 text-red-800' : 'bg-purple-200 text-purple-800');
-            const showMarkDone = !selectedTask.isCompleted;
+            let statusText = 'Upcoming';
+            let statusColor = 'bg-purple-200 text-purple-800';
+            let showMarkDone = true;
+
+            if (selectedTask.recurrence === 'none') {
+                // For non-recurring tasks, use the simple isCompleted flag
+                if (selectedTask.isCompleted) {
+                    statusText = 'Completed';
+                    statusColor = 'bg-green-200 text-green-800';
+                    showMarkDone = false;
+                } else if (taskStartUTC < todayUTC) {
+                    statusText = 'Overdue';
+                    statusColor = 'bg-red-200 text-red-800';
+                }
+            } else {
+                // For recurring tasks, determine status based on if ANY occurrences are done
+                const hasCompletedOccurrences = Array.isArray(selectedTask.completedOccurrencesDates) && selectedTask.completedOccurrencesDates.length > 0;
+                if (hasCompletedOccurrences) {
+                    statusText = 'Has Completed Occurrences';
+                    statusColor = 'bg-yellow-200 text-yellow-800';
+                    showMarkDone = true; // Still allow marking current day's occurrence done
+                } else if (taskStartUTC < todayUTC) {
+                    // If recurring and starts in past, but no occurrences are completed
+                    statusText = 'Upcoming (Some may be overdue)'; // More general for recurring
+                    statusColor = 'bg-purple-200 text-purple-800';
+                }
+            }
 
             appRoot.innerHTML = `
                 <div class="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
@@ -2298,6 +2400,12 @@
                                 <h4 class="font-semibold text-slate-700">Recurrence:</h4>
                                 <p class="text-slate-600 capitalize">${selectedTask.recurrence || "None"}</p>
                             </div>
+                            ${selectedTask.recurrence !== 'none' && Array.isArray(selectedTask.completedOccurrencesDates) && selectedTask.completedOccurrencesDates.length > 0 ? `
+                                <div>
+                                    <h4 class="font-semibold text-slate-700">Completed Occurrences:</h4>
+                                    <p class="text-slate-600 text-sm">${selectedTask.completedOccurrencesDates.join(', ')}</p>
+                                </div>
+                            ` : ''}
                         </div>
 
                         <div class="flex flex-col sm:flex-row justify-end space-y-3 sm:space-y-0 sm:space-x-3">
@@ -2314,8 +2422,11 @@
                             ${showMarkDone ? `
                             <button id="detail-mark-done-btn"
                                 class="w-full sm:w-auto px-6 py-3 rounded-lg text-sm font-medium text-white bg-green-500 hover:bg-green-600 transition-colors flex items-center justify-center"
+                                data-original-id="${selectedTask.id}"
+                                data-type="task"
+                                data-start-date="${new Date().toISOString().split('T')[0]}" <!-- Mark current day's occurrence -->
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check-circle mr-2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg> Mark Done
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check-circle mr-2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg> Mark Today's Occurrence Done
                             </button>
                             ` : ''}
                             <button id="detail-delete-btn"
@@ -2334,29 +2445,7 @@
             document.getElementById('detail-back-btn').onclick = () => navigateTo('landing');
             document.getElementById('detail-edit-btn').onclick = () => navigateTo('editTask', selectedTask);
             if (document.getElementById('detail-mark-done-btn')) {
-                document.getElementById('detail-mark-done-btn').onclick = () => {
-                    showConfirmModal(
-                        "Mark as Done",
-                        `Are you sure you want to mark "${selectedTask.name}" as done?`
-                        ,
-                        async () => {
-                            try {
-                                const userIdToUse = currentUser?.uid;
-                                const taskDocRef = doc(db, `artifacts/${appId}/users/${userIdToUse}/tasks`, selectedTask.id);
-                                await updateDoc(taskDocRef, { isCompleted: true });
-                                showNotification("Task marked as done!", "success");
-                                navigateTo('landing'); // Go back to calendar after update
-                            } catch (error) {
-                                console.error("Error marking task as done:", error);
-                                showNotification(`Failed to mark task as done: ${error.message}. Ensure Firebase is configured and security rules allow writes.`, 'error');
-                            }
-                        },
-                        () => { /* Cancelled */ },
-                        "Yes, Mark Done",
-                        "Cancel",
-                        "bg-green-600 hover:bg-green-700"
-                    );
-                };
+                document.getElementById('detail-mark-done-btn').onclick = (e) => handleMarkDoneClick(e.target);
             }
             document.getElementById('detail-delete-btn').onclick = () => {
                 showConfirmModal(
@@ -2374,7 +2463,7 @@
                             navigateTo('landing');
                         } catch (error) {
                             console.error("Error deleting task:", error);
-                            showNotification(`Failed to delete task: ${err.message}. Ensure Firebase is configured and security rules allow writes.`, 'error');
+                            showNotification(`Failed to delete task: ${error.message}. Ensure Firebase is configured and security rules allow writes.`, 'error');
                         } finally {
                             // Ensure the deleting flag is reset regardless of success or failure
                             taskDetailIsDeleting = false;
@@ -2815,3 +2904,6 @@
     </script>
 </body>
 </html>
+
+
+
